@@ -22,6 +22,9 @@
 
 from .vendor.platformutils import get_platform
 
+#debug
+import traceback
+
 if get_platform() == "android":
     from .Interfaces import Interface
     from .Interfaces import LocalInterface
@@ -929,6 +932,71 @@ class Reticulum:
                                     else:
                                         interface.ifac_size = 8
 
+                                if c["type"] == "RNodeMultiInterface":
+                                    count = 0
+                                    for subinterface in c:
+                                        # if the retrieved entry is not a string, it must be a dictionary, which is what we want
+                                        if not isinstance(c[subinterface], str):
+                                            count += 1
+
+                                    # create an array with a row for each subinterface
+                                    subint_config = [[0 for x in range(8)] for y in range(count)]
+                                    subint_index = 0
+
+                                    for subinterface in c:
+                                        # if the retrieved entry is not a string, it must be a dictionary, which is what we want
+                                        if not isinstance(c[subinterface], str):
+                                            subinterface_config = self.config["interfaces"][name][subinterface]
+
+                                            frequency = int(subinterface_config["frequency"]) if "frequency" in subinterface_config else None
+                                            subint_config[subint_index][0] = frequency
+                                            bandwidth = int(subinterface_config["bandwidth"]) if "bandwidth" in subinterface_config else None
+                                            subint_config[subint_index][1] = bandwidth
+                                            txpower = int(subinterface_config["txpower"]) if "txpower" in subinterface_config else None
+                                            subint_config[subint_index][2] = txpower
+                                            spreadingfactor = int(subinterface_config["spreadingfactor"]) if "spreadingfactor" in subinterface_config else None
+                                            subint_config[subint_index][3] = spreadingfactor 
+                                            codingrate = int(subinterface_config["codingrate"]) if "codingrate" in subinterface_config else None
+                                            subint_config[subint_index][4] = codingrate
+                                            flow_control = subinterface_config.as_bool("flow_control") if "flow_control" in subinterface_config else False
+                                            subint_config[subint_index][5] = flow_control 
+                                            st_alock = float(subinterface_config["airtime_limit_short"]) if "airtime_limit_short" in subinterface_config else None
+                                            subint_config[subint_index][6] = st_alock
+                                            lt_alock = float(subinterface_config["airtime_limit_long"]) if "airtime_limit_long" in subinterface_config else None
+                                            subint_config[subint_index][7] = lt_alock
+                                            subint_index += 1
+
+                                    id_interval = int(c["id_interval"]) if "id_interval" in c else None
+                                    id_callsign = c["id_callsign"] if "id_callsign" in c else None
+                                    port = c["port"] if "port" in c else None
+                                    
+                                    if port == None:
+                                        raise ValueError("No port specified for RNodeMulti interface")
+
+                                    interface = RNodeMultiInterface.RNodeMultiInterface(
+                                        RNS.Transport,
+                                        name,
+                                        port,
+                                        subint_config,
+                                        id_interval = id_interval,
+                                        id_callsign = id_callsign
+                                    )
+
+                                    #if "outgoing" in c and c.as_bool("outgoing") == False:
+                                    interface.OUT = False
+                                    #else:
+                                    #    interface.OUT = True
+
+                                    interface.mode = interface_mode
+
+                                    interface.announce_cap = announce_cap
+                                    if configured_bitrate:
+                                        interface.bitrate = configured_bitrate
+                                    if ifac_size != None:
+                                        interface.ifac_size = ifac_size
+                                    else:
+                                        interface.ifac_size = 8
+
                                 if interface != None:
                                     interface.announce_rate_target = announce_rate_target
                                     interface.announce_rate_grace = announce_rate_grace
@@ -973,6 +1041,7 @@ class Reticulum:
                         except Exception as e:
                             RNS.log("The interface \""+name+"\" could not be created. Check your configuration file for errors!", RNS.LOG_ERROR)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
+                            RNS.log(traceback.print_exc(), RNS.LOG_ERROR)
                             RNS.panic()
                     else:
                         RNS.log("The interface name \""+name+"\" was already used. Check your configuration file for errors!", RNS.LOG_ERROR)
