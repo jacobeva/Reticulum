@@ -22,9 +22,6 @@
 
 from .vendor.platformutils import get_platform
 
-#debug
-import traceback
-
 if get_platform() == "android":
     from .Interfaces import Interface
     from .Interfaces import LocalInterface
@@ -1064,7 +1061,6 @@ class Reticulum:
                         except Exception as e:
                             RNS.log("The interface \""+name+"\" could not be created. Check your configuration file for errors!", RNS.LOG_ERROR)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
-                            RNS.log(traceback.print_exc(), RNS.LOG_ERROR)
                             RNS.panic()
                     else:
                         RNS.log("The interface name \""+name+"\" was already used. Check your configuration file for errors!", RNS.LOG_ERROR)
