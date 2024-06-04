@@ -35,7 +35,6 @@ class KISS():
     TFESC           = 0xDD
     
     CMD_UNKNOWN     = 0xFE
-    CMD_DATA        = 0x00
     CMD_FREQUENCY   = 0x01
     CMD_BANDWIDTH   = 0x02
     CMD_TXPOWER     = 0x03
@@ -574,19 +573,18 @@ class RNodeMultiInterface(Interface):
                     last_read_ms = int(time.time()*1000)
 
                     if (in_frame and byte == KISS.FEND and
-                        command == KISS.CMD_INT0_DATA or
-                        command == KISS.CMD_INT1_DATA or
-                        command == KISS.CMD_INT2_DATA or
-                        command == KISS.CMD_INT3_DATA or
-                        command == KISS.CMD_INT4_DATA or
-                        command == KISS.CMD_INT5_DATA or
-                        command == KISS.CMD_INT6_DATA or
-                        command == KISS.CMD_INT7_DATA or
-                        command == KISS.CMD_INT8_DATA or
-                        command == KISS.CMD_INT9_DATA or
-                        command == KISS.CMD_INT10_DATA or
-                        command == KISS.CMD_INT11_DATA
-                        ):
+                            (command == KISS.CMD_INT0_DATA or
+                            command == KISS.CMD_INT1_DATA or
+                            command == KISS.CMD_INT2_DATA or
+                            command == KISS.CMD_INT3_DATA or
+                            command == KISS.CMD_INT4_DATA or
+                            command == KISS.CMD_INT5_DATA or
+                            command == KISS.CMD_INT6_DATA or
+                            command == KISS.CMD_INT7_DATA or
+                            command == KISS.CMD_INT8_DATA or
+                            command == KISS.CMD_INT9_DATA or
+                            command == KISS.CMD_INT10_DATA or
+                            command == KISS.CMD_INT11_DATA)):
                         in_frame = False
                         self.subinterfaces[KISS.int_data_cmd_to_index(command)].processIncoming(data_buffer)
                         data_buffer = b""
@@ -599,7 +597,18 @@ class RNodeMultiInterface(Interface):
                     elif (in_frame and len(data_buffer) < self.HW_MTU):
                         if (len(data_buffer) == 0 and command == KISS.CMD_UNKNOWN):
                             command = byte
-                        elif (command == KISS.CMD_DATA):
+                        elif (command == KISS.CMD_INT0_DATA or
+                              command == KISS.CMD_INT1_DATA or
+                              command == KISS.CMD_INT2_DATA or
+                              command == KISS.CMD_INT3_DATA or
+                              command == KISS.CMD_INT4_DATA or
+                              command == KISS.CMD_INT5_DATA or
+                              command == KISS.CMD_INT6_DATA or
+                              command == KISS.CMD_INT7_DATA or
+                              command == KISS.CMD_INT8_DATA or
+                              command == KISS.CMD_INT9_DATA or
+                              command == KISS.CMD_INT10_DATA or
+                              command == KISS.CMD_INT11_DATA):
                             if (byte == KISS.FESC):
                                 escape = True
                             else:
