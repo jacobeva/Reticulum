@@ -28,9 +28,6 @@ import time
 import math
 import RNS
 
-# debug
-import traceback
-
 class KISS():
     FEND            = 0xC0
     FESC            = 0xDB
@@ -172,6 +169,17 @@ class KISS():
             case KISS.CMD_INT11_DATA:
                 return 11
 
+    def interface_type_to_str(interface_type):
+        match interface_type:
+            case KISS.SX1262:
+                return "SX1262"
+            case KISS.SX1276:
+                return "SX1276"
+            case KISS.SX1278:
+                return "SX1278"
+            case KISS.SX1280:
+                return "SX1280"
+
     @staticmethod
     def escape(data):
         data = data.replace(bytes([0xdb]), bytes([0xdb, 0xdd]))
@@ -190,6 +198,8 @@ class RNodeMultiInterface(Interface):
     REQUIRED_FW_VER_MIN = 52
 
     RECONNECT_WAIT = 5
+
+    MAX_SUBINTERFACES = 11
 
     def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None):
         if RNS.vendor.platformutils.is_android():
@@ -236,7 +246,7 @@ class RNodeMultiInterface(Interface):
         self.first_tx    = None
         self.reconnect_w = RNodeMultiInterface.RECONNECT_WAIT
 
-        self.subinterfaces = []
+        self.subinterfaces = [0] * RNodeMultiInterface.MAX_SUBINTERFACES
         self.subinterface_indexes = []
         self.subinterface_types = []
         self.subint_config = subint_config
@@ -330,22 +340,31 @@ class RNodeMultiInterface(Interface):
 
         RNS.log("Serial port "+self.port+" is now open")
         RNS.log("Creating subinterfaces...", RNS.LOG_VERBOSE)
-        for subint in self.subinterface_indexes:
+        index = None
+        for subint in self.subint_config:
+            for subint_type in self.subinterface_types:
+                if subint[0] == subint_type:
+                    index = self.subinterface_types.index(subint_type)
+            
+            # The interface type configured is not present on the RNode
+            if index is None:
+                raise ValueError("Interface type \""+subint[0]+"\" is not available on "+self.name)
+
             # interface will add itself to the subinterfaces list automatically
-            interface = (RNodeSubInterface(
+            interface = RNodeSubInterface(
                     RNS.Transport,
                     self,
-                    subint,
-                    self.subinterface_types[subint],
-                    frequency = self.subint_config[subint][0],
-                    bandwidth = self.subint_config[subint][1],
-                    txpower = self.subint_config[subint][2],
-                    sf = self.subint_config[subint][3],
-                    cr = self.subint_config[subint][4],
-                    flow_control=self.subint_config[subint][5],
-                    st_alock=self.subint_config[subint][6],
-                    lt_alock=self.subint_config[subint][7]
-            ))
+                    index,
+                    subint[0],
+                    frequency = subint[1],
+                    bandwidth = subint[2],
+                    txpower = subint[3],
+                    sf = subint[4],
+                    cr = subint[5],
+                    flow_control=subint[6],
+                    st_alock=subint[7],
+                    lt_alock=subint[8]
+            )
 
             interface.OUT = True
             interface.IN  = self.IN
@@ -816,7 +835,7 @@ class RNodeMultiInterface(Interface):
                             if (len(command_buffer) == 2):
                                 # add the interface to the back of the lists
                                 self.subinterface_indexes.append(command_buffer[0])
-                                self.subinterface_types.append(command_buffer[1])
+                                self.subinterface_types.append(KISS.interface_type_to_str(command_buffer[1]))
                                 command_buffer = b""
                         
                 else:
@@ -904,7 +923,7 @@ class RNodeSubInterface(Interface):
     Q_SNR_MAX      = 6
     Q_SNR_STEP     = 2
 
-    def __init__(self, owner, parent_interface, index, subinterface_type, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
+    def __init__(self, owner, parent_interface, index, interface_type, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
         if RNS.vendor.platformutils.is_android():
             raise SystemError("Invalid interface type. The Android-specific RNode interface must be used on Android")
 
@@ -959,21 +978,11 @@ class RNodeSubInterface(Interface):
                 sel_cmd = KISS.CMD_SEL_INT0
                 data_cmd= KISS.CMD_INT0_DATA
 
-        match subinterface_type:
-            case KISS.SX1262:
-                subinterface = "SX1262"
-            case KISS.SX1276:
-                subinterface = "SX1276"
-            case KISS.SX1278:
-                subinterface = "SX1278"
-            case KISS.SX1280:
-                subinterface = "SX1280"
-
         self.owner       = owner
         self.index       = index
         self.sel_cmd     = sel_cmd
         self.data_cmd    = data_cmd
-        self.subinterface= subinterface
+        self.interface_type= interface_type
         self.flow_control= flow_control
         self.speed       = 115200
         self.databits    = 8
@@ -1028,7 +1037,7 @@ class RNodeSubInterface(Interface):
         self.parent_interface = parent_interface
 
         # add this interface to the subinterfaces array
-        self.parent_interface.subinterfaces.append(self)
+        self.parent_interface.subinterfaces.insert(index, self)
 
         self.validcfg  = True
         if (self.frequency < RNodeSubInterface.FREQ_MIN or self.frequency > RNodeSubInterface.FREQ_MAX):
@@ -1184,4 +1193,4 @@ class RNodeSubInterface(Interface):
             self.interface_ready = True
 
     def __str__(self):
-        return self.parent_interface.name+"["+self.subinterface+":"+str(self.index)+"]"
+        return self.parent_interface.name+"["+self.interface_type+":"+str(self.index)+"]"
