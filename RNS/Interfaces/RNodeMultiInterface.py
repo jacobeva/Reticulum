@@ -586,8 +586,6 @@ class RNodeMultiInterface(Interface):
                             command == KISS.CMD_INT10_DATA or
                             command == KISS.CMD_INT11_DATA)):
                         in_frame = False
-                        # debug
-                        RNS.log("Received packet, index being used is: "+str(KISS.int_data_cmd_to_index(command)), RNS.LOG_DEBUG)
                         self.subinterfaces[KISS.int_data_cmd_to_index(command)].processIncoming(data_buffer)
                         data_buffer = b""
                         command_buffer = b""
