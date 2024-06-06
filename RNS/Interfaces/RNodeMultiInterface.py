@@ -112,35 +112,6 @@ class KISS():
     SX1262    = 0x03
     SX1280    = 0x04
 
-    def index_to_selector(index):
-        match index:
-            case 0:
-                return KISS.CMD_SEL_INT0
-            case 1:
-                return KISS.CMD_SEL_INT1
-            case 2:
-                return KISS.CMD_SEL_INT2
-            case 3:
-                return KISS.CMD_SEL_INT3
-            case 4:
-                return KISS.CMD_SEL_INT4
-            case 5:
-                return KISS.CMD_SEL_INT5
-            case 6:
-                return KISS.CMD_SEL_INT6
-            case 7:
-                return KISS.CMD_SEL_INT7
-            case 8:
-                return KISS.CMD_SEL_INT8
-            case 9:
-                return KISS.CMD_SEL_INT9
-            case 10:
-                return KISS.CMD_SEL_INT10
-            case 11:
-                return KISS.CMD_SEL_INT11
-            case _:
-                return KISS.CMD_SEL_INT0
-
     def int_data_cmd_to_index(int_data_cmd):
         match int_data_cmd:
             case KISS.CMD_INT0_DATA:
@@ -246,7 +217,6 @@ class RNodeMultiInterface(Interface):
         self.reconnect_w = RNodeMultiInterface.RECONNECT_WAIT
 
         self.subinterfaces = [0] * RNodeMultiInterface.MAX_SUBINTERFACES
-        self.subinterface_indexes = []
         self.subinterface_types = []
         self.subint_config = subint_config
 
@@ -339,47 +309,47 @@ class RNodeMultiInterface(Interface):
 
         RNS.log("Serial port "+self.port+" is now open")
         RNS.log("Creating subinterfaces...", RNS.LOG_VERBOSE)
-        index = None
         for subint in self.subint_config:
-            for subint_type in self.subinterface_types:
-                if subint[0] == subint_type:
-                    index = self.subinterface_types.index(subint_type)
-            
-            # The interface type configured is not present on the RNode
-            if index is None:
-                raise ValueError("Interface type \""+subint[0]+"\" is not available on "+self.name)
+            subint_vport = int(subint[2])
+            # check if index of vport exists in interface types array (the index corresponds to the vport for that interface)
+            if len(self.subinterface_types) >= (subint_vport+1):
+                # if the selected vport matches the type of interface chosen
+                if self.subinterface_types[subint_vport] == subint[1]:
+                    # interface will add itself to the subinterfaces list automatically
+                    interface = RNodeSubInterface(
+                            RNS.Transport,
+                            subint[0],
+                            self,
+                            subint_vport,
+                            subint[1],
+                            frequency = subint[3],
+                            bandwidth = subint[4],
+                            txpower = subint[5],
+                            sf = subint[6],
+                            cr = subint[7],
+                            flow_control=subint[8],
+                            st_alock=subint[9],
+                            lt_alock=subint[10]
+                    )
 
-            # interface will add itself to the subinterfaces list automatically
-            interface = RNodeSubInterface(
-                    RNS.Transport,
-                    self,
-                    index,
-                    subint[0],
-                    frequency = subint[1],
-                    bandwidth = subint[2],
-                    txpower = subint[3],
-                    sf = subint[4],
-                    cr = subint[5],
-                    flow_control=subint[6],
-                    st_alock=subint[7],
-                    lt_alock=subint[8]
-            )
+                    interface.OUT = True
+                    interface.IN  = self.IN
+                    #interface.bitrate = self.bitrate
+                    
+                    interface.announce_rate_target = self.announce_rate_target
+                    #interface.announce_rate_grace = self.announce_rate_grace
+                    #interface.announce_rate_penalty = self.announce_rate_penalty
+                    interface.mode = self.mode
+                    interface.HW_MTU = self.HW_MTU
+                    interface.detected = True
+                    RNS.Transport.interfaces.append(interface)
+                    RNS.log("Spawned new RNode subinterface: "+str(interface), RNS.LOG_VERBOSE)
 
-            interface.OUT = True
-            interface.IN  = self.IN
-            #interface.bitrate = self.bitrate
-            
-            interface.announce_rate_target = self.announce_rate_target
-            #interface.announce_rate_grace = self.announce_rate_grace
-            #interface.announce_rate_penalty = self.announce_rate_penalty
-            interface.mode = self.mode
-            interface.HW_MTU = self.HW_MTU
-            interface.detected = True
-            RNS.Transport.interfaces.append(interface)
-            RNS.log("Spawned new RNode subinterface: "+str(interface), RNS.LOG_VERBOSE)
-
-            self.clients += 1
-
+                    self.clients += 1
+                else:
+                    raise ValueError("Interface type \""+subint[1]+"\" for subinterface "+subint[0]+" is not available on virtual port "+str(subint_vport)+" on "+self.name)
+            else:
+                raise ValueError("Virtual port \""+subint[2]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
         self.online = True
 
     def detect(self):
@@ -439,90 +409,89 @@ class RNodeMultiInterface(Interface):
             raise IOError("An IO error occurred while restarting device")
         sleep(2.25);
 
-    # todo, change to use sel_cmd variable instead of translating to index by function
-    def setFrequency(self, frequency, index):
+    def setFrequency(self, frequency, interface):
         c1 = frequency >> 24
         c2 = frequency >> 16 & 0xFF
         c3 = frequency >> 8 & 0xFF
         c4 = frequency & 0xFF
         data = KISS.escape(bytes([c1])+bytes([c2])+bytes([c3])+bytes([c4]))
 
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_FREQUENCY])+data+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_FREQUENCY])+data+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring frequency for "+str(self))
-        self.last_write_index = index
+        self.last_write_index = interface.index
 
-    def setBandwidth(self, bandwidth, index):
+    def setBandwidth(self, bandwidth, interface):
         c1 = bandwidth >> 24
         c2 = bandwidth >> 16 & 0xFF
         c3 = bandwidth >> 8 & 0xFF
         c4 = bandwidth & 0xFF
         data = KISS.escape(bytes([c1])+bytes([c2])+bytes([c3])+bytes([c4]))
 
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_BANDWIDTH])+data+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_BANDWIDTH])+data+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring bandwidth for "+str(self))
-        self.last_write_index = index
+        self.last_write_index = interface.index
 
-    def setTXPower(self, txpower, index):
+    def setTXPower(self, txpower, interface):
         txp = bytes([txpower])
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring TX power for "+str(self))
-        self.last_write_index = index
+        self.last_write_index = interface.index
 
-    def setSpreadingFactor(self, sf, index):
+    def setSpreadingFactor(self, sf, interface):
         sf = bytes([sf])
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_SF])+sf+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_SF])+sf+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring spreading factor for "+str(self))
-        self.last_write_index = index
+        self.last_write_index = interface.index
 
-    def setCodingRate(self, cr, index):
+    def setCodingRate(self, cr, interface):
         cr = bytes([cr])
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_CR])+cr+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_CR])+cr+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring coding rate for "+str(self))
-        self.last_write_index = index
+        self.last_write_index = interface.index
 
-    def setSTALock(self, st_alock, index):
+    def setSTALock(self, st_alock, interface):
         if st_alock != None:
             at = int(st_alock*100)
             c1 = at >> 8 & 0xFF
             c2 = at & 0xFF
             data = KISS.escape(bytes([c1])+bytes([c2]))
 
-            kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_ST_ALOCK])+data+bytes([KISS.FEND])
+            kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_ST_ALOCK])+data+bytes([KISS.FEND])
             written = self.serial.write(kiss_command)
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while configuring short-term airtime limit for "+str(self))
-            self.last_write_index = index
+            self.last_write_index = interface.index
 
-    def setLTALock(self, lt_alock, index):
+    def setLTALock(self, lt_alock, interface):
         if lt_alock != None:
             at = int(lt_alock*100)
             c1 = at >> 8 & 0xFF
             c2 = at & 0xFF
             data = KISS.escape(bytes([c1])+bytes([c2]))
 
-            kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_LT_ALOCK])+data+bytes([KISS.FEND])
+            kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_LT_ALOCK])+data+bytes([KISS.FEND])
             written = self.serial.write(kiss_command)
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while configuring long-term airtime limit for "+str(self))
-            self.last_write_index = index
+            self.last_write_index = interface.index
 
-    def setRadioState(self, state, index):
+    def setRadioState(self, state, interface):
         #self.state = state
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.index_to_selector(index)])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_RADIO_STATE])+bytes([state])+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_RADIO_STATE])+bytes([state])+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring radio state for "+str(self))
-        self.last_write_index = index
+        self.last_write_index = interface.index
 
     def validate_firmware(self):
         if (self.maj_version >= RNodeMultiInterface.REQUIRED_FW_VER_MAJ):
@@ -537,14 +506,13 @@ class RNodeMultiInterface(Interface):
         RNS.log("Please update your RNode firmware with rnodeconf from https://github.com/markqvist/rnodeconfigutil/")
         RNS.panic()
 
-    def processOutgoing(self, data, sel_cmd = None):
-        if sel_cmd is None:
+    def processOutgoing(self, data, interface = None):
+        if interface is None:
             # do nothing if RNS tries to transmit on this interface directly
-            RNS.log("Attempted transmit!", RNS.LOG_DEBUG)
             pass
         else:
             data    = KISS.escape(data)
-            frame   = bytes([0xc0])+bytes([sel_cmd])+data+bytes([0xc0])
+            frame   = bytes([0xc0])+bytes([interface.data_cmd])+data+bytes([0xc0])
 
             written = self.serial.write(frame)
             self.txb += len(data)
@@ -632,7 +600,7 @@ class RNodeMultiInterface(Interface):
                                 command_buffer = command_buffer+bytes([byte])
                                 if (len(command_buffer) == 4):
                                     self.subinterfaces[self.last_write_index].r_frequency = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
-                                    RNS.log(str(self)+" Radio reporting frequency is "+str(self.subinterfaces[self.last_write_index].r_frequency/1000000.0)+" MHz", RNS.LOG_DEBUG)
+                                    RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting frequency is "+str(self.subinterfaces[self.last_write_index].r_frequency/1000000.0)+" MHz", RNS.LOG_DEBUG)
                                     self.subinterfaces[self.last_write_index].updateBitrate()
 
                         elif (command == KISS.CMD_BANDWIDTH):
@@ -648,19 +616,19 @@ class RNodeMultiInterface(Interface):
                                 command_buffer = command_buffer+bytes([byte])
                                 if (len(command_buffer) == 4):
                                     self.subinterfaces[self.last_write_index].r_bandwidth = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
-                                    RNS.log(str(self)+" Radio reporting bandwidth is "+str(self.subinterfaces[self.last_write_index].r_bandwidth/1000.0)+" KHz", RNS.LOG_DEBUG)
+                                    RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting bandwidth is "+str(self.subinterfaces[self.last_write_index].r_bandwidth/1000.0)+" KHz", RNS.LOG_DEBUG)
                                     self.subinterfaces[self.last_write_index].updateBitrate()
 
                         elif (command == KISS.CMD_TXPOWER):
                             self.subinterfaces[self.last_write_index].r_txpower = byte
-                            RNS.log(str(self)+" Radio reporting TX power is "+str(self.subinterfaces[self.last_write_index].r_txpower)+" dBm", RNS.LOG_DEBUG)
+                            RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting TX power is "+str(self.subinterfaces[self.last_write_index].r_txpower)+" dBm", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_SF):
                             self.subinterfaces[self.last_write_index].r_sf = byte
-                            RNS.log(str(self)+" Radio reporting spreading factor is "+str(self.subinterfaces[self.last_write_index].r_sf), RNS.LOG_DEBUG)
+                            RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting spreading factor is "+str(self.subinterfaces[self.last_write_index].r_sf), RNS.LOG_DEBUG)
                             self.subinterfaces[self.last_write_index].updateBitrate()
                         elif (command == KISS.CMD_CR):
                             self.subinterfaces[self.last_write_index].r_cr = byte
-                            RNS.log(str(self)+" Radio reporting coding rate is "+str(self.subinterfaces[self.last_write_index].r_cr), RNS.LOG_DEBUG)
+                            RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting coding rate is "+str(self.subinterfaces[self.last_write_index].r_cr), RNS.LOG_DEBUG)
                             self.subinterfaces[self.last_write_index].updateBitrate()
                         elif (command == KISS.CMD_RADIO_STATE):
                             self.subinterfaces[self.last_write_index].r_state = byte
@@ -668,7 +636,7 @@ class RNodeMultiInterface(Interface):
                                 pass
                                 #RNS.log(str(self)+" Radio reporting state is online", RNS.LOG_DEBUG)
                             else:
-                                RNS.log(str(self)+" Radio reporting state is offline", RNS.LOG_DEBUG)
+                                RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting state is offline", RNS.LOG_DEBUG)
 
                         elif (command == KISS.CMD_RADIO_LOCK):
                             self.subinterfaces[self.last_write_index].r_lock = byte
@@ -746,7 +714,7 @@ class RNodeMultiInterface(Interface):
                                 if (len(command_buffer) == 2):
                                     at = command_buffer[0] << 8 | command_buffer[1]
                                     self.subinterfaces[self.last_write_index].r_st_alock = at/100.0
-                                    RNS.log(str(self)+" Radio reporting short-term airtime limit is "+str(self.r_st_alock)+"%", RNS.LOG_DEBUG)
+                                    RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting short-term airtime limit is "+str(self.subinterfaces[self.last_write_index].r_st_alock)+"%", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_LT_ALOCK):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -761,7 +729,7 @@ class RNodeMultiInterface(Interface):
                                 if (len(command_buffer) == 2):
                                     at = command_buffer[0] << 8 | command_buffer[1]
                                     self.subinterfaces[self.last_write_index].r_lt_alock = at/100.0
-                                    RNS.log(str(self)+" Radio reporting long-term airtime limit is "+str(self.r_lt_alock)+"%", RNS.LOG_DEBUG)
+                                    RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting long-term airtime limit is "+str(self.subinterfaces[self.last_write_index].r_lt_alock)+"%", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_STAT_CHTM):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -801,15 +769,15 @@ class RNodeMultiInterface(Interface):
                                     prt = command_buffer[6] << 8 | command_buffer[7]
                                     cst = command_buffer[8] << 8 | command_buffer[9]
 
-                                    if lst != self.r_symbol_time_ms or lsr != self.r_symbol_rate or prs != self.r_preamble_symbols or prt != self.r_premable_time_ms or cst != self.r_csma_slot_time_ms:
-                                        self.r_symbol_time_ms    = lst
-                                        self.r_symbol_rate       = lsr
-                                        self.r_preamble_symbols  = prs
-                                        self.r_premable_time_ms  = prt
-                                        self.r_csma_slot_time_ms = cst
-                                        RNS.log(str(self)+" Radio reporting symbol time is "+str(round(self.r_symbol_time_ms,2))+"ms (at "+str(self.r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
-                                        RNS.log(str(self)+" Radio reporting preamble is "+str(self.r_preamble_symbols)+" symbols ("+str(self.r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
-                                        RNS.log(str(self)+" Radio reporting CSMA slot time is "+str(self.r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
+                                    if lst != self.subinterfaces[self.last_write_index].r_symbol_time_ms or lsr != self.subinterfaces[self.last_write_index].r_symbol_rate or prs != self.subinterfaces[self.last_write_index].r_preamble_symbols or prt != self.subinterfaces[self.last_write_index].r_premable_time_ms or cst != self.subinterfaces[self.last_write_index].r_csma_slot_time_ms:
+                                        self.subinterfaces[self.last_write_index].r_symbol_time_ms    = lst
+                                        self.subinterfaces[self.last_write_index].r_symbol_rate       = lsr
+                                        self.subinterfaces[self.last_write_index].r_preamble_symbols  = prs
+                                        self.subinterfaces[self.last_write_index].r_premable_time_ms  = prt
+                                        self.subinterfaces[self.last_write_index].r_csma_slot_time_ms = cst
+                                        RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting symbol time is "+str(round(self.subinterfaces[self.last_write_index].r_symbol_time_ms,2))+"ms (at "+str(self.subinterfaces[self.last_write_index].r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
+                                        RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting preamble is "+str(self.subinterfaces[self.last_write_index].r_preamble_symbols)+" symbols ("+str(self.subinterfaces[self.last_write_index].r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
+                                        RNS.log(str(self.subinterfaces[self.last_write_index])+" Radio reporting CSMA slot time is "+str(self.subinterfaces[self.last_write_index].r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_RANDOM):
                             self.r_random = byte
                         elif (command == KISS.CMD_PLATFORM):
@@ -842,8 +810,7 @@ class RNodeMultiInterface(Interface):
                         elif (command == KISS.CMD_INTERFACES):
                             command_buffer = command_buffer+bytes([byte])
                             if (len(command_buffer) == 2):
-                                # add the interface to the back of the lists
-                                self.subinterface_indexes.append(command_buffer[0])
+                                # add the interface to the back of the list, they're all given from vport 0 and up in order
                                 self.subinterface_types.append(KISS.interface_type_to_str(command_buffer[1]))
                                 command_buffer = b""
                         
@@ -859,9 +826,10 @@ class RNodeMultiInterface(Interface):
                     if self.id_interval != None and self.id_callsign != None:
                         if self.first_tx != None:
                             if time.time() > self.first_tx + self.id_interval:
-                                RNS.log("Interface "+str(self)+" is transmitting beacon data: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
-                                # todo, fixme
-                                self.processOutgoing(self.id_callsign)
+                                RNS.log("Interface "+str(self)+" is transmitting beacon data on all subinterfaces: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
+                                for interface in self.subinterfaces:
+                                    if interface != 0:
+                                        self.subinterfaces[interface.index].processOutgoing(self.id_callsign)
 
                     sleep(0.08)
 
@@ -869,7 +837,6 @@ class RNodeMultiInterface(Interface):
             self.online = False
             RNS.log("A serial port error occurred, the contained exception was: "+str(e), RNS.LOG_ERROR)
             RNS.log("The interface "+str(self)+" experienced an unrecoverable error and is now offline.", RNS.LOG_ERROR)
-            RNS.log(traceback.print_exc(), RNS.LOG_DEBUG)
 
             if RNS.Reticulum.panic_on_interface_error:
                 RNS.panic()
@@ -905,9 +872,9 @@ class RNodeMultiInterface(Interface):
         self.detached = True
         self.disable_external_framebuffer()
 
-        # todo: make this iterate over all subinterfaces
-        self.setRadioState(KISS.RADIO_STATE_OFF, 0)
-        self.setRadioState(KISS.RADIO_STATE_OFF, 1)
+        for interface in self.subinterfaces:
+            if interface != 0:
+                self.setRadioState(KISS.RADIO_STATE_OFF, interface.index)
         self.leave()
 
     def should_ingress_limit(self):
@@ -915,7 +882,8 @@ class RNodeMultiInterface(Interface):
 
     def process_queue(self):
         for interface in self.subinterfaces:
-            interface.process_queue()
+            if interface != 0:
+                interface.process_queue()
 
     def __str__(self):
         return "RNodeMultiInterface["+str(self.name)+"]"
@@ -932,7 +900,7 @@ class RNodeSubInterface(Interface):
     Q_SNR_MAX      = 6
     Q_SNR_STEP     = 2
 
-    def __init__(self, owner, parent_interface, index, interface_type, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
+    def __init__(self, owner, name, parent_interface, index, interface_type, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
         if RNS.vendor.platformutils.is_android():
             raise SystemError("Invalid interface type. The Android-specific RNode interface must be used on Android")
 
@@ -988,6 +956,7 @@ class RNodeSubInterface(Interface):
                 data_cmd= KISS.CMD_INT0_DATA
 
         self.owner       = owner
+        self.name        = name
         self.index       = index
         self.sel_cmd     = sel_cmd
         self.data_cmd    = data_cmd
@@ -1122,14 +1091,14 @@ class RNodeSubInterface(Interface):
             
 
     def initRadio(self):
-        self.parent_interface.setFrequency(self.frequency, self.index)
-        self.parent_interface.setBandwidth(self.bandwidth, self.index)
-        self.parent_interface.setTXPower(self.txpower, self.index)
-        self.parent_interface.setSpreadingFactor(self.sf, self.index)
-        self.parent_interface.setCodingRate(self.cr, self.index)
-        self.parent_interface.setSTALock(self.st_alock, self.index)
-        self.parent_interface.setLTALock(self.lt_alock, self.index)
-        self.parent_interface.setRadioState(KISS.RADIO_STATE_ON, self.index)
+        self.parent_interface.setFrequency(self.frequency, self)
+        self.parent_interface.setBandwidth(self.bandwidth, self)
+        self.parent_interface.setTXPower(self.txpower, self)
+        self.parent_interface.setSpreadingFactor(self.sf, self)
+        self.parent_interface.setCodingRate(self.cr, self)
+        self.parent_interface.setSTALock(self.st_alock, self)
+        self.parent_interface.setLTALock(self.lt_alock, self)
+        self.parent_interface.setRadioState(KISS.RADIO_STATE_ON, self)
         self.state = KISS.RADIO_STATE_ON
 
     def validateRadioState(self):
@@ -1179,13 +1148,13 @@ class RNodeSubInterface(Interface):
                 if self.flow_control:
                     self.interface_ready = False
 
-                #if data == self.id_callsign:
-                #    self.first_tx = None
-                #else:
-                if self.first_tx == None:
-                    self.first_tx = time.time()
-                self.txb += len(data)
-                self.parent_interface.processOutgoing(data, self.data_cmd)
+                if data == self.parent_interface.id_callsign:
+                    self.parent_interface.first_tx = None
+                else:
+                    if self.parent_interface.first_tx == None:
+                        self.parent_interface.first_tx = time.time()
+                    self.txb += len(data)
+                    self.parent_interface.processOutgoing(data, self)
             else:
                 self.queue(data)
 
@@ -1202,4 +1171,4 @@ class RNodeSubInterface(Interface):
             self.interface_ready = True
 
     def __str__(self):
-        return self.parent_interface.name+"["+self.interface_type+":"+str(self.index)+"]"
+        return self.parent_interface.name+"["+self.name+"]"

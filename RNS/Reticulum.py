@@ -948,7 +948,7 @@ class Reticulum:
                                                 enabled_count += 1
 
                                     # Create an array with a row for each subinterface
-                                    subint_config = [[0 for x in range(9)] for y in range(enabled_count)]
+                                    subint_config = [[0 for x in range(11)] for y in range(enabled_count)]
                                     subint_index = 0
 
                                     for subinterface in c:
@@ -956,27 +956,31 @@ class Reticulum:
                                         if not isinstance(c[subinterface], str):
                                             subinterface_config = self.config["interfaces"][name][subinterface]
                                             if (("interface_enabled" in subinterface_config) and subinterface_config.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
+                                                subint_config[subint_index][0] = subinterface
+
                                                 subint_type = subinterface_config["type"] if "type" in subinterface_config else None
                                                 if subint_type is None:
                                                     raise ValueError("No type defined for "+name+" subinterface!")
+                                                subint_config[subint_index][1] = subint_type
+                                                subint_vport = subinterface_config["vport"] if "vport" in subinterface_config else None
+                                                subint_config[subint_index][2] = subint_vport
 
-                                                subint_config[subint_index][0] = subint_type
                                                 frequency = int(subinterface_config["frequency"]) if "frequency" in subinterface_config else None
-                                                subint_config[subint_index][1] = frequency
+                                                subint_config[subint_index][3] = frequency
                                                 bandwidth = int(subinterface_config["bandwidth"]) if "bandwidth" in subinterface_config else None
-                                                subint_config[subint_index][2] = bandwidth
+                                                subint_config[subint_index][4] = bandwidth
                                                 txpower = int(subinterface_config["txpower"]) if "txpower" in subinterface_config else None
-                                                subint_config[subint_index][3] = txpower
+                                                subint_config[subint_index][5] = txpower
                                                 spreadingfactor = int(subinterface_config["spreadingfactor"]) if "spreadingfactor" in subinterface_config else None
-                                                subint_config[subint_index][4] = spreadingfactor 
+                                                subint_config[subint_index][6] = spreadingfactor 
                                                 codingrate = int(subinterface_config["codingrate"]) if "codingrate" in subinterface_config else None
-                                                subint_config[subint_index][5] = codingrate
+                                                subint_config[subint_index][7] = codingrate
                                                 flow_control = subinterface_config.as_bool("flow_control") if "flow_control" in subinterface_config else False
-                                                subint_config[subint_index][6] = flow_control 
+                                                subint_config[subint_index][8] = flow_control 
                                                 st_alock = float(subinterface_config["airtime_limit_short"]) if "airtime_limit_short" in subinterface_config else None
-                                                subint_config[subint_index][7] = st_alock
+                                                subint_config[subint_index][9] = st_alock
                                                 lt_alock = float(subinterface_config["airtime_limit_long"]) if "airtime_limit_long" in subinterface_config else None
-                                                subint_config[subint_index][8] = lt_alock
+                                                subint_config[subint_index][10] = lt_alock
                                                 subint_index += 1
 
                                     # if no subinterfaces are defined
