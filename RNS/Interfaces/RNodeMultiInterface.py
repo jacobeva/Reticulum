@@ -992,9 +992,10 @@ class RNodeSubInterface(Interface):
         self.packet_queue    = []
         self.interface_ready = False
         self.parent_interface = parent_interface
+        self.announce_rate_target = None
 
         # add this interface to the subinterfaces array
-        self.parent_interface.subinterfaces.insert(index, self)
+        self.parent_interface.subinterfaces[index] = self
 
         self.validcfg  = True
         if (self.interface_type == "SX1262" or self.interface_type == "SX1276" or self.interface_type == "SX1278"):
