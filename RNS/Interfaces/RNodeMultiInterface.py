@@ -1137,8 +1137,8 @@ class RNodeSubInterface(Interface):
                 else:
                     if self.parent_interface.first_tx == None:
                         self.parent_interface.first_tx = time.time()
-                    self.txb += len(data)
-                    self.parent_interface.processOutgoing(data, self)
+                self.txb += len(data)
+                self.parent_interface.processOutgoing(data, self)
             else:
                 self.queue(data)
 
