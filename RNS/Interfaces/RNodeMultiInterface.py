@@ -815,10 +815,14 @@ class RNodeMultiInterface(Interface):
                     if self.id_interval != None and self.id_callsign != None:
                         if self.first_tx != None:
                             if time.time() > self.first_tx + self.id_interval:
-                                RNS.log("Interface "+str(self)+" is transmitting beacon data on all subinterfaces: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
+                                interface_available = False
                                 for interface in self.subinterfaces:
-                                    if interface != 0:
+                                    if interface != 0 and interface.online:
+                                        interface_available = True
                                         self.subinterfaces[interface.index].processOutgoing(self.id_callsign)
+
+                                if interface_available:
+                                    RNS.log("Interface "+str(self)+" is transmitting beacon data on all subinterfaces: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
 
                     sleep(0.08)
 
@@ -831,6 +835,8 @@ class RNodeMultiInterface(Interface):
                 RNS.panic()
 
             RNS.log("Reticulum will attempt to reconnect the interface periodically.", RNS.LOG_ERROR)
+
+            self.teardown_subinterfaces()
 
         self.online = False
         try:
@@ -865,6 +871,14 @@ class RNodeMultiInterface(Interface):
             if interface != 0:
                 self.setRadioState(KISS.RADIO_STATE_OFF, interface)
         self.leave()
+
+    def teardown_subinterfaces(self):
+        for interface in self.subinterfaces:
+            if interface != 0:
+                if interface in RNS.Transport.interfaces:
+                    RNS.Transport.interfaces.remove(interface)
+                self.subinterfaces[interface.index] = 0
+                del interface
 
     def should_ingress_limit(self):
         return False
