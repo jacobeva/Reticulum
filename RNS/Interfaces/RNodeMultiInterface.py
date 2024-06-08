@@ -878,7 +878,6 @@ class RNodeMultiInterface(Interface):
                 if interface in RNS.Transport.interfaces:
                     RNS.Transport.interfaces.remove(interface)
                 self.subinterfaces[interface.index] = 0
-                del interface
 
     def should_ingress_limit(self):
         return False
