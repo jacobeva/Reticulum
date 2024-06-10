@@ -107,10 +107,13 @@ class KISS():
     PLATFORM_AVR   = 0x90
     PLATFORM_ESP32 = 0x80
 
+    SX127X    = 0x00
     SX1276    = 0x01
     SX1278    = 0x02
-    SX1262    = 0x03
-    SX1280    = 0x04
+    SX126X    = 0x10
+    SX1262    = 0x11
+    SX128X    = 0x20
+    SX1280    = 0x21
 
     def int_data_cmd_to_index(int_data_cmd):
         match int_data_cmd:
@@ -141,14 +144,12 @@ class KISS():
 
     def interface_type_to_str(interface_type):
         match interface_type:
-            case KISS.SX1262:
-                return "SX1262"
-            case KISS.SX1276:
-                return "SX1276"
-            case KISS.SX1278:
-                return "SX1278"
-            case KISS.SX1280:
-                return "SX1280"
+            case KISS.SX126X | KISS.SX1262:
+                return "SX126X"
+            case KISS.SX127X | KISS.SX1276 | KISS.SX1278:
+                return "SX127X"
+            case KISS.SX128X | KISS.SX1280:
+                return "SX128X"
 
     @staticmethod
     def escape(data):
@@ -1011,16 +1012,17 @@ class RNodeSubInterface(Interface):
         self.parent_interface.subinterfaces[index] = self
 
         self.validcfg  = True
-        if (self.interface_type == "SX1262" or self.interface_type == "SX1276" or self.interface_type == "SX1278"):
+        if (self.interface_type == "SX126X" or self.interface_type == "SX127X"):
             if (self.frequency < RNodeSubInterface.LOW_FREQ_MIN or self.frequency > RNodeSubInterface.LOW_FREQ_MAX):
                 RNS.log("Invalid frequency configured for "+str(self), RNS.LOG_ERROR)
                 self.validcfg = False
-        elif (self.interface_type == "SX1280"):
+        elif (self.interface_type == "SX128X"):
             if (self.frequency < RNodeSubInterface.HIGH_FREQ_MIN or self.frequency > RNodeSubInterface.HIGH_FREQ_MAX):
                 RNS.log("Invalid frequency configured for "+str(self), RNS.LOG_ERROR)
                 self.validcfg = False
         else:
             RNS.log("Invalid interface type configured for "+str(self), RNS.LOG_ERROR)
+            self.validcfg = False
 
         if (self.txpower < 0 or self.txpower > 22):
             RNS.log("Invalid TX power configured for "+str(self), RNS.LOG_ERROR)
