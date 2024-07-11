@@ -1024,7 +1024,7 @@ class RNodeSubInterface(Interface):
             RNS.log("Invalid interface type configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
-        if (self.txpower < 0 or self.txpower > 22):
+        if (self.txpower < 0 or self.txpower > 27):
             RNS.log("Invalid TX power configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
