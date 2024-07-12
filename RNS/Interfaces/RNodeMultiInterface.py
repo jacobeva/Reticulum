@@ -424,7 +424,7 @@ class RNodeMultiInterface(Interface):
         self.selected_index = interface.index
 
     def setTXPower(self, txpower, interface):
-        txp = bytes([txpower])
+        txp = txpower.to_bytes(signed=True)
         kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
@@ -609,7 +609,8 @@ class RNodeMultiInterface(Interface):
                                     self.subinterfaces[self.selected_index].updateBitrate()
 
                         elif (command == KISS.CMD_TXPOWER):
-                            self.subinterfaces[self.selected_index].r_txpower = byte
+                            txp = byte - 256 if byte > 127 else byte
+                            self.subinterfaces[self.selected_index].r_txpower = txp
                             RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting TX power is "+str(self.subinterfaces[self.selected_index].r_txpower)+" dBm", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_SF):
                             self.subinterfaces[self.selected_index].r_sf = byte
@@ -1024,7 +1025,7 @@ class RNodeSubInterface(Interface):
             RNS.log("Invalid interface type configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
-        if (self.txpower < 0 or self.txpower > 27):
+        if (self.txpower < -9 or self.txpower > 27):
             RNS.log("Invalid TX power configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
