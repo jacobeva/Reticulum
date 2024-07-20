@@ -100,6 +100,8 @@ class KISS():
     CMD_FW_HASH     = 0x58
     CMD_FW_UPD      = 0x61
 
+    CMD_FW_LENGTH   = 0x65
+
     DETECT_REQ      = 0x73
     DETECT_RESP     = 0x46
     
@@ -658,6 +660,14 @@ class RNode():
     def set_firmware_hash(self, hash_bytes):
         data = KISS.escape(hash_bytes)
         kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_FW_HASH])+data+bytes([KISS.FEND])
+
+        written = self.serial.write(kiss_command)
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending firmware hash to device")
+
+    def set_firmware_length(self, length_bytes):
+        data = KISS.escape(length_bytes)
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_FW_LENGTH])+data+bytes([KISS.FEND])
 
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
@@ -1270,6 +1280,7 @@ def main():
         parser.add_argument("-H", "--firmware-hash", action="store", help="Display installed firmware hash")
         parser.add_argument("-K", "--get-target-firmware-hash", action="store_true", help=argparse.SUPPRESS) # Get target firmware hash from device
         parser.add_argument("-L", "--get-firmware-hash", action="store_true", help=argparse.SUPPRESS) # Get calculated firmware hash from device
+        parser.add_argument("--set-firmware-length", action="store", help=argparse.SUPPRESS) # Set length of flashed firmware region on device
         parser.add_argument("--platform", action="store", metavar="platform", type=str, default=None, help="Platform specification for device bootstrap")
         parser.add_argument("--product", action="store", metavar="product", type=str, default=None, help="Product specification for device bootstrap") # 
         parser.add_argument("--model", action="store", metavar="model", type=str, default=None, help="Model code for device bootstrap")
@@ -3549,6 +3560,10 @@ def main():
                 else:
                     RNS.log("This device has not been provisioned yet, cannot get firmware hash")
                     exit(77)
+
+            if args.set_firmware_length:
+                RNS.log("Setting firmware length on device...")
+                rnode.set_firmware_length(int(args.set_firmware_length).to_bytes(4, signed=False))
 
             if rnode.provisioned:
                 if args.normal:
