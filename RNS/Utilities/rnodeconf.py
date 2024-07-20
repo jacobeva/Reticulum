@@ -133,6 +133,8 @@ class ROM():
     PRODUCT_RAK4631 = 0x10
     MODEL_11       = 0x11
     MODEL_12       = 0x12
+    MODEL_13       = 0x13
+    MODEL_14       = 0x14
     PRODUCT_FREENODE = 0x20
     MODEL_21       = 0x21
 
