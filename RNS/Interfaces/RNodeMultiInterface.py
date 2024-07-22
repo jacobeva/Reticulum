@@ -424,7 +424,7 @@ class RNodeMultiInterface(Interface):
         self.selected_index = interface.index
 
     def setTXPower(self, txpower, interface):
-        txp = txpower.to_bytes(signed=True)
+        txp = txpower.to_bytes(1, byteorder="big", signed=True)
         kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
