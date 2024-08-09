@@ -221,7 +221,7 @@ class RNodeInterface(Interface):
     MAX_CHUNK = 32768
 
     FREQ_MIN = 137000000
-    FREQ_MAX = 1020000000
+    FREQ_MAX = 3000000000
 
     RSSI_OFFSET = 157
 
@@ -428,7 +428,7 @@ class RNodeInterface(Interface):
             RNS.log("Invalid frequency configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
-        if (self.txpower < 0 or self.txpower > 17):
+        if (self.txpower < 0 or self.txpower > 22):
             RNS.log("Invalid TX power configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
@@ -436,7 +436,7 @@ class RNodeInterface(Interface):
             RNS.log("Invalid bandwidth configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
-        if (self.sf < 7 or self.sf > 12):
+        if (self.sf < 5 or self.sf > 12):
             RNS.log("Invalid spreading factor configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
