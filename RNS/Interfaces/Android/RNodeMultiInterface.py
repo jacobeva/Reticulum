@@ -364,6 +364,7 @@ class RNodeMultiInterface(Interface):
                 RNS.log(str(self)+" USB write timeout set to "+str(self.serial.USB_WRITE_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
 
         elif self.allow_bluetooth:
+            pass
             #if self.bt_manager == None:
             #    self.bt_manager = AndroidBluetoothManager(
             #        owner = self,
