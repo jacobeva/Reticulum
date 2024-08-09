@@ -419,6 +419,7 @@ class RNodeMultiInterface(Interface):
                         subint[0],
                         self,
                         subint_vport,
+                        self.subinterface_types[subint_vport],
                         frequency = subint[2],
                         bandwidth = subint[3],
                         txpower = subint[4],
@@ -1032,7 +1033,7 @@ class RNodeSubInterface(Interface):
     Q_SNR_MAX      = 6
     Q_SNR_STEP     = 2
 
-    def __init__(self, owner, name, parent_interface, index, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
+    def __init__(self, owner, name, parent_interface, index, interface_type, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
         if RNS.vendor.platformutils.is_android():
             raise SystemError("Invalid interface type. The Android-specific RNode interface must be used on Android")
 
