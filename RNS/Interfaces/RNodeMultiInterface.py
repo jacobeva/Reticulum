@@ -304,38 +304,34 @@ class RNodeMultiInterface(Interface):
             subint_vport = int(subint[2])
             # check if index of vport exists in interface types array (the index corresponds to the vport for that interface)
             if len(self.subinterface_types) >= (subint_vport+1):
-                # if the selected vport matches the type of interface chosen
-                if self.subinterface_types[subint_vport] == subint[1]:
-                    # interface will add itself to the subinterfaces list automatically
-                    interface = RNodeSubInterface(
-                            RNS.Transport,
-                            subint[0],
-                            self,
-                            subint_vport,
-                            subint[1],
-                            frequency = subint[3],
-                            bandwidth = subint[4],
-                            txpower = subint[5],
-                            sf = subint[6],
-                            cr = subint[7],
-                            flow_control=subint[8],
-                            st_alock=subint[9],
-                            lt_alock=subint[10]
-                    )
+                # interface will add itself to the subinterfaces list automatically
+                interface = RNodeSubInterface(
+                        RNS.Transport,
+                        subint[0],
+                        self,
+                        subint_vport,
+                        subint[1],
+                        frequency = subint[3],
+                        bandwidth = subint[4],
+                        txpower = subint[5],
+                        sf = subint[6],
+                        cr = subint[7],
+                        flow_control=subint[8],
+                        st_alock=subint[9],
+                        lt_alock=subint[10]
+                )
 
-                    interface.OUT = True
-                    interface.IN  = self.IN
-                    
-                    interface.announce_rate_target = self.announce_rate_target
-                    interface.mode = self.mode
-                    interface.HW_MTU = self.HW_MTU
-                    interface.detected = True
-                    RNS.Transport.interfaces.append(interface)
-                    RNS.log("Spawned new RNode subinterface: "+str(interface), RNS.LOG_VERBOSE)
+                interface.OUT = True
+                interface.IN  = self.IN
+                
+                interface.announce_rate_target = self.announce_rate_target
+                interface.mode = self.mode
+                interface.HW_MTU = self.HW_MTU
+                interface.detected = True
+                RNS.Transport.interfaces.append(interface)
+                RNS.log("Spawned new RNode subinterface: "+str(interface), RNS.LOG_VERBOSE)
 
-                    self.clients += 1
-                else:
-                    raise ValueError("Interface type \""+subint[1]+"\" for subinterface "+subint[0]+" is not available on virtual port "+str(subint_vport)+" on "+self.name)
+                self.clients += 1
             else:
                 raise ValueError("Virtual port \""+subint[2]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
         self.online = True
