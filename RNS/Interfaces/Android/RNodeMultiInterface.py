@@ -1019,16 +1019,8 @@ class RNodeSubInterface(Interface):
     Q_SNR_STEP     = 2
 
     def __init__(self, owner, name, parent_interface, index, interface_type, frequency = None, bandwidth = None, txpower = None, sf = None, cr = None, flow_control = False, st_alock = None, lt_alock = None,):
-        if RNS.vendor.platformutils.is_android():
-            raise SystemError("Invalid interface type. The Android-specific RNode interface must be used on Android")
-
-        import importlib
-        if importlib.util.find_spec('serial') != None:
-            import serial
-        else:
-            RNS.log("Using the RNode interface requires a serial communication module to be installed.", RNS.LOG_CRITICAL)
-            RNS.log("You can install one with the command: python3 -m pip install pyserial", RNS.LOG_CRITICAL)
-            RNS.panic()
+        if not RNS.vendor.platformutils.is_android():
+            raise SystemError("Android-specific interface was used on non-Android OS")
 
         super().__init__()
         
