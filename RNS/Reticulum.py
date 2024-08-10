@@ -30,6 +30,7 @@ if get_platform() == "android":
     from .Interfaces import UDPInterface
     from .Interfaces import I2PInterface
     from .Interfaces.Android import RNodeInterface
+    from .Interface.Android import RNodeMultiInterface
     from .Interfaces.Android import SerialInterface
     from .Interfaces.Android import KISSInterface
 else:
