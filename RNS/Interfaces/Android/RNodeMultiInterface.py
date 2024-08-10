@@ -374,21 +374,6 @@ class RNodeMultiInterface(Interface):
 
             #if self.bt_manager != None:
             #    self.bt_manager.connect_any_device()
-        RNS.log("Opening serial port "+self.port+"...")
-        self.serial = self.pyserial.Serial(
-            port = self.port,
-            baudrate = self.speed,
-            bytesize = self.databits,
-            parity = self.pyserial.PARITY_NONE,
-            stopbits = self.stopbits,
-            xonxoff = False,
-            rtscts = False,
-            timeout = 0,
-            inter_byte_timeout = None,
-            write_timeout = None,
-            dsrdtr = False,
-        )
-
 
     def configure_device(self):
         sleep(2.0)
