@@ -21,6 +21,7 @@
 # SOFTWARE.
 
 from RNS.Interfaces.Interface import Interface
+from jnius import PythonJavaClass, java_method
 from time import sleep
 import sys
 import threading
@@ -156,7 +157,204 @@ class KISS():
         data = data.replace(bytes([0xdb]), bytes([0xdb, 0xdd]))
         data = data.replace(bytes([0xc0]), bytes([0xdb, 0xdc]))
         return data
-    
+
+
+class AndroidBLEGattCallbacks(PythonJavaClass):
+    # Should inherit from this class
+    __javainterfaces__ = ['android/bluetooth/BluetoothGattCallback']
+
+    def __init__(self, owner):
+        self.owner = owner
+
+    @java_method('(Landroid.bluetooth.BluetoothGatt;II)V')
+    def onConnectionStateChange(self, bluetooth_att, status, new_state):
+        if new_state == AndroidBluetoothManager.GATT_CONNECTED:
+            self.owner.connected = True
+        elif new_state == AndroidBluetoothManager.GATT_DISCONNECTED:
+            self.owner.connected = False
+
+    @java_method('(Landroid.bluetooth.BluetoothGatt;I)V')
+    def onServicesDiscovered(self, bluetooth_gatt, status):
+        if status == AndroidBluetoothManager.GATT_SUCCESS:
+            services = bluetooth_gatt.getServices()
+
+            for service in services:
+                if service.getUuid().toString() == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
+                    characteristics = service.getCharacteristics()
+                    for characteristic in characteristics:
+                        if characteristic.getUuid().toString() == AndroidBluetoothManager.NORDIC_UART_RX_UUID:
+                            RNS.log("Found UART RX characteristic!")
+                        if characteristic.getUuid().toString() == AndroidBluetoothManager.NORDIC_UART_TX_UUID:
+                            RNS.log("Found UART TX characteristic!")
+
+class AndroidBluetoothManager():
+    def __init__(self, owner, target_device_name = None, target_device_address = None):
+        from jnius import autoclass, cast
+
+        NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+        NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+        NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+
+        DEVICE_TYPE_CLASSIC = 1
+        DEVICE_TYPE_LE = 2
+        DEVICE_TYPE_DUAL = 3
+
+        GATT_CONNECTED = 2
+        GATT_DISCONNECTED = 0
+
+        GATT_SUCCESS = 0
+
+        self.owner = owner
+        self.connected = False
+        self.target_device_name = target_device_name
+        self.target_device_address = target_device_address
+        self.potential_remote_devices = []
+        self.rfcomm_socket = None
+        self.connected_device = None
+        self.connection_failed = False
+        self.bt_adapter = autoclass('android.bluetooth.BluetoothAdapter')
+        self.bt_device  = autoclass('android.bluetooth.BluetoothDevice')
+        self.bt_device_type = None
+
+        # Bluetooth Legacy
+        self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
+        self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
+        self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
+
+        # BLE
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        currentActivity = cast('android.app.Activity', PythonActivity.mActivity)
+        self.context = cast('android.content.Context', currentActivity.getApplicationContext())
+        self.gatt_callbacks = AndroidBLEGattCallbacks(self)
+
+
+    def connect(self, device_address=None):
+        self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
+
+    def bt_enabled(self):
+        return self.bt_adapter.getDefaultAdapter().isEnabled()
+
+    def get_paired_devices(self):
+        if self.bt_enabled():
+            return self.bt_adapter.getDefaultAdapter().getBondedDevices()
+        else:
+            RNS.log("Could not query paired devices, Bluetooth is disabled", RNS.LOG_EXTREME)
+            return []
+
+    def get_potential_devices(self):
+        potential_devices = []
+        for device in self.get_paired_devices():
+            if self.target_device_address != None:
+                if str(device.getAddress()).replace(":", "").lower() == str(self.target_device_address).replace(":", "").lower():
+                    if self.target_device_name == None:
+                        potential_devices.append(device)
+                    else:
+                        if device.getName().lower() == self.target_device_name.lower():
+                            potential_devices.append(device)
+
+            elif self.target_device_name != None:
+                if device.getName().lower() == self.target_device_name.lower():
+                    potential_devices.append(device)
+
+            else:
+                if device.getName().lower().startswith("rnode "):
+                    potential_devices.append(device)
+
+        return potential_devices
+
+    def connect_any_device(self):
+        if (self.rfcomm_socket != None and not self.rfcomm_socket.isConnected()) or self.rfcomm_socket == None:
+            self.connection_failed = False
+            if len(self.potential_remote_devices) == 0:
+                self.potential_remote_devices = self.get_potential_devices()
+                if len(self.potential_remote_devices) == 0:
+                    RNS.log("No suitable bluetooth devices available, can't connect", RNS.LOG_DEBUG)
+                    return
+
+            while not self.connected and len(self.potential_remote_devices) > 0:
+                device = self.potential_remote_devices.pop()
+                try:
+                    self.bt_device_type = device.getType()
+                    if self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
+                        try:
+                            self.rfcomm_socket = device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
+                            if self.rfcomm_socket == None:
+                                raise IOError("Bluetooth stack returned no socket object")
+                            else:
+                                if not self.rfcomm_socket.isConnected():
+                                    try:
+                                        self.rfcomm_socket.connect()
+                                        self.rfcomm_reader = self.buffered_input_stream(self.rfcomm_socket.getInputStream(), 1024)
+                                        self.rfcomm_writer = self.rfcomm_socket.getOutputStream()
+                                        self.connected = True
+                                        self.connected_device = device
+                                        RNS.log("Bluetooth device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
+                                    except Exception as e:
+                                        raise IOError("The Bluetooth RFcomm socket could not be connected: "+str(e))
+
+                        except Exception as e:
+                            RNS.log("Could not create and connect Bluetooth RFcomm socket for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
+                            RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
+
+                    # Prefer to connect to devices with capabilities of both BLE and BT Legacy using BLE
+                    if (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
+                        try: 
+                            self.bluetooth_gatt = device.connectGatt(self.context, True, self.gatt_callbacks)
+                            self.bluetooth_gatt.discoverServices()
+                        except Exception as e:
+                            RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
+                            RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
+
+
+                except Exception as e:
+                    RNS.log("Could not determine type of Bluetooth device for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
+                    RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
+
+    def close(self):
+        if self.connected:
+            if self.rfcomm_reader != None:
+                self.rfcomm_reader.close()
+                self.rfcomm_reader = None
+            
+            if self.rfcomm_writer != None:
+                self.rfcomm_writer.close()
+                self.rfcomm_writer = None
+
+            if self.rfcomm_socket != None:
+                self.rfcomm_socket.close()
+
+            self.connected = False
+            self.connected_device = None
+            self.potential_remote_devices = []
+
+
+    def read(self, len = None):
+        if self.connection_failed:
+            raise IOError("Bluetooth connection failed")
+        else:
+            if self.connected and self.rfcomm_reader != None:
+                available = self.rfcomm_reader.available()
+                if available > 0:
+                    if hasattr(self.rfcomm_reader, "readNBytes"):
+                        return self.rfcomm_reader.readNBytes(available)
+                    else:
+                        # Compatibility mode for older android versions lacking readNBytes
+                        rb = self.rfcomm_reader.read().to_bytes(1, "big")
+                        return rb
+                else:
+                    return bytes([])
+            else:
+                raise IOError("No RFcomm socket available")
+
+    def write(self, data):
+        try:
+            self.rfcomm_writer.write(data)
+            self.rfcomm_writer.flush()
+            return len(data)
+        except Exception as e:
+            RNS.log("Bluetooth connection failed for "+str(self), RNS.LOG_ERROR)
+            self.connection_failed = True
+            return 0
 
 class RNodeMultiInterface(Interface):
     MAX_CHUNK = 32768
