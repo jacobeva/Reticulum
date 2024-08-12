@@ -168,6 +168,8 @@ class RNodeMultiInterface(Interface):
 
     RECONNECT_WAIT = 5
 
+    PORT_IO_TIMEOUT = 3
+
     MAX_SUBINTERFACES = 11
 
     def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, allow_bluetooth = False, target_device_name = None):
@@ -252,6 +254,9 @@ class RNodeMultiInterface(Interface):
         self.packet_queue    = []
         self.interface_ready = False
         self.announce_rate_target = None
+        self.last_port_io = 0
+        self.port_io_timeout = RNodeMultiInterface.PORT_IO_TIMEOUT
+        self.last_imagedata = None
 
         self.validcfg  = True
         if id_interval != None and id_callsign != None:
@@ -462,6 +467,7 @@ class RNodeMultiInterface(Interface):
     FB_PIXELS_PER_BYTE = 8//FB_BITS_PER_PIXEL
     FB_BYTES_PER_LINE  = FB_PIXEL_WIDTH//FB_PIXELS_PER_BYTE
     def display_image(self, imagedata):
+        self.last_imagedata = imagedata
         if self.display != None:
             lines = len(imagedata)//8
             for line in range(lines):
