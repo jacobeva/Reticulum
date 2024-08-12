@@ -301,7 +301,7 @@ class RNodeMultiInterface(Interface):
         RNS.log("Serial port "+self.port+" is now open")
         RNS.log("Creating subinterfaces...", RNS.LOG_VERBOSE)
         for subint in self.subint_config:
-            subint_vport = int(subint[2])
+            subint_vport = int(subint[1])
             # check if index of vport exists in interface types array (the index corresponds to the vport for that interface)
             if len(self.subinterface_types) >= (subint_vport+1):
                 # interface will add itself to the subinterfaces list automatically
@@ -310,15 +310,15 @@ class RNodeMultiInterface(Interface):
                         subint[0],
                         self,
                         subint_vport,
-                        subint[1],
-                        frequency = subint[3],
-                        bandwidth = subint[4],
-                        txpower = subint[5],
-                        sf = subint[6],
-                        cr = subint[7],
-                        flow_control=subint[8],
-                        st_alock=subint[9],
-                        lt_alock=subint[10]
+                        self.subinterface_types[subint_vport],
+                        frequency = subint[2],
+                        bandwidth = subint[3],
+                        txpower = subint[4],
+                        sf = subint[5],
+                        cr = subint[6],
+                        flow_control=subint[7],
+                        st_alock=subint[8],
+                        lt_alock=subint[9]
                 )
 
                 interface.OUT = True
@@ -333,7 +333,7 @@ class RNodeMultiInterface(Interface):
 
                 self.clients += 1
             else:
-                raise ValueError("Virtual port \""+subint[2]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
+                raise ValueError("Virtual port \""+subint[1]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
         self.online = True
 
     def detect(self):
