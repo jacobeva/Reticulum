@@ -219,6 +219,7 @@ class RNodeMultiInterface(Interface):
         self.stopbits    = 1
         self.timeout     = 100
         self.online      = False
+        self.hw_errors   = []
         self.detached    = False
         self.reconnecting= False
 
@@ -279,8 +280,8 @@ class RNodeMultiInterface(Interface):
         except Exception as e:
             RNS.log("Could not open serial port for interface "+str(self), RNS.LOG_ERROR)
             RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
-            RNS.log("Reticulum will attempt to bring up this interface periodically", RNS.LOG_ERROR)
-            if not self.detached and not self.reconnecting:
+            if len(self.hw_errors) == 0:
+                RNS.log("Reticulum will attempt to bring up this interface periodically", RNS.LOG_ERROR)
                 thread = threading.Thread(target=self.reconnect_port)
                 thread.daemon = True
                 thread.start()
@@ -582,7 +583,10 @@ class RNodeMultiInterface(Interface):
         RNS.log("The firmware version of the connected RNode is "+str(self.maj_version)+"."+str(self.min_version), RNS.LOG_ERROR)
         RNS.log("This version of Reticulum requires at least version "+str(RNodeMultiInterface.REQUIRED_FW_VER_MAJ)+"."+str(RNodeMultiInterface.REQUIRED_FW_VER_MIN), RNS.LOG_ERROR)
         RNS.log("Please update your RNode firmware with rnodeconf from https://github.com/markqvist/Reticulum/RNS/Utilities/rnodeconf.py")
-        RNS.panic()
+        error_description  = "The firmware version of the connected RNode is "+str(self.maj_version)+"."+str(self.min_version)+". "
+        error_description += "This version of Reticulum requires at least version "+str(RNodeMultiInterface.REQUIRED_FW_VER_MAJ)+"."+str(RNodeMultiInterface.REQUIRED_FW_VER_MIN)+". "
+        error_description += "Please update your RNode firmware with rnodeconf from: https://github.com/markqvist/Reticulum/RNS/Utilities/rnodeconf.py"
+        self.hw_errors.append({"error": KISS.ERROR_INVALID_FIRMWARE, "description": error_description})
 
     def processOutgoing(self, data, interface = None):
         if interface is None:
