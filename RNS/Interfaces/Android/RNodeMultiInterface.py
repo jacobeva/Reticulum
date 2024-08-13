@@ -384,17 +384,17 @@ class RNodeMultiInterface(Interface):
                 from usbserial4a import serial4a as serial
                 self.parity = "N"
 
-                #self.bt_target_device_name = target_device_name
-                #self.bt_target_device_address = target_device_address
-                #if allow_bluetooth:
-                #    self.bt_manager = AndroidBluetoothManager(
-                #        owner = self,
-                #        target_device_name = self.bt_target_device_name,
-                #        target_device_address = self.bt_target_device_address
-                #    )
+                self.bt_target_device_name = target_device_name
+                self.bt_target_device_address = target_device_address
+                if allow_bluetooth:
+                    self.bt_manager = AndroidBluetoothManager(
+                        owner = self,
+                        target_device_name = self.bt_target_device_name,
+                        target_device_address = self.bt_target_device_address
+                    )
 
-                #else:
-                self.bt_manager = None
+                else:
+                    self.bt_manager = None
             
             else:
                 RNS.log("Could not load USB serial module for Android, RNode interface cannot be created.", RNS.LOG_CRITICAL)
@@ -420,6 +420,7 @@ class RNodeMultiInterface(Interface):
         self.timeout     = 100
         self.online      = False
         self.hw_errors   = []
+        self.allow_bluetooth = allow_bluetooth
         self.detached    = False
         self.reconnecting= False
 
