@@ -275,7 +275,7 @@ class AndroidBluetoothManager():
                 device = self.potential_remote_devices.pop()
                 try:
                     self.bt_device_type = device.getType()
-                    if self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
+                    if False:# debug self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
                         try:
                             self.rfcomm_socket = device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
                             if self.rfcomm_socket == None:
@@ -297,7 +297,8 @@ class AndroidBluetoothManager():
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
 
                     # Prefer to connect to devices with capabilities of both BLE and BT Legacy using BLE
-                    if (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
+                    #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
+                    if True:
                         try: 
                             self.bluetooth_gatt = device.connectGatt(self.context, True, self.gatt_callbacks)
                             self.bluetooth_gatt.discoverServices()
