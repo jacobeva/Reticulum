@@ -371,7 +371,7 @@ class RNodeMultiInterface(Interface):
 
     MAX_SUBINTERFACES = 11
 
-    def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, allow_bluetooth = False, target_device_name = None):
+    def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, allow_bluetooth = False, target_device_name = None, target_device_address = None):
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
