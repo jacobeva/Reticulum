@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 from RNS.Interfaces.Interface import Interface
-from jnius import PythonJavaClass, java_method
+import asyncio
+import bleak
 from time import sleep
 import sys
 import threading
@@ -159,34 +160,6 @@ class KISS():
         return data
 
 
-class AndroidBLEGattCallbacks(PythonJavaClass):
-    # Should inherit from this class
-    __javainterfaces__ = ['android/bluetooth/BluetoothGattCallback']
-
-    def __init__(self, owner):
-        self.owner = owner
-
-    @java_method('(Landroid.bluetooth.BluetoothGatt;II)V')
-    def onConnectionStateChange(self, bluetooth_att, status, new_state):
-        if new_state == AndroidBluetoothManager.GATT_CONNECTED:
-            self.owner.connected = True
-        elif new_state == AndroidBluetoothManager.GATT_DISCONNECTED:
-            self.owner.connected = False
-
-    @java_method('(Landroid.bluetooth.BluetoothGatt;I)V')
-    def onServicesDiscovered(self, bluetooth_gatt, status):
-        if status == AndroidBluetoothManager.GATT_SUCCESS:
-            services = bluetooth_gatt.getServices()
-
-            for service in services:
-                if service.getUuid().toString() == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
-                    characteristics = service.getCharacteristics()
-                    for characteristic in characteristics:
-                        if characteristic.getUuid().toString() == AndroidBluetoothManager.NORDIC_UART_RX_UUID:
-                            RNS.log("Found UART RX characteristic!")
-                        if characteristic.getUuid().toString() == AndroidBluetoothManager.NORDIC_UART_TX_UUID:
-                            RNS.log("Found UART TX characteristic!")
-
 class AndroidBluetoothManager():
     def __init__(self, owner, target_device_name = None, target_device_address = None):
         from jnius import autoclass, cast
@@ -220,13 +193,6 @@ class AndroidBluetoothManager():
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
-
-        # BLE
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        currentActivity = cast('android.app.Activity', PythonActivity.mActivity)
-        self.context = cast('android.content.Context', currentActivity.getApplicationContext())
-        self.gatt_callbacks = AndroidBLEGattCallbacks(self)
-
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
@@ -299,9 +265,16 @@ class AndroidBluetoothManager():
                     # Prefer to connect to devices with capabilities of both BLE and BT Legacy using BLE
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
-                        try: 
-                            self.bluetooth_gatt = device.connectGatt(self.context, True, self.gatt_callbacks)
-                            self.bluetooth_gatt.discoverServices()
+                        try:
+                            async with bleak.BleakClient(device.getAddress()) as client:
+                                for service in client.services:
+                                    RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
+                                    if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
+                                        RNS.log("Service correct!", RNS.LOG_DEBUG)
+                                    for characteristic in service.characteristics:
+                                        RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
+                                        if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
+                                            RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
