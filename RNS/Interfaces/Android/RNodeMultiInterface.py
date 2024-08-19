@@ -277,7 +277,7 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            self.ble_connect(self, device)
+                            asyncio.run(self.ble_connect(self, device))
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
