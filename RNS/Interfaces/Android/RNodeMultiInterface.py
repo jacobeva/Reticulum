@@ -189,16 +189,31 @@ class AndroidBluetoothManager():
         self.bt_device  = autoclass('android.bluetooth.BluetoothDevice')
         self.bt_device_type = None
 
+        # BLE 
+        self.bleak_loop = None
+        self.bleak_thread_ready = None
+
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
 
-    def connect(self, device_address=None):
-        self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
+    # BLE
+    def run_bleak_loop(self):
+        self.bleak_loop = asyncio.new_event_loop()
+        # Event loop is now available.
+        self.bleak_thread_ready.set()
+        self.bleak_loop.run_forever()
 
-    async def ble_connect(self, device):
-        async with bleak.BleakClient(device.getAddress()) as client:
+    def await_bleak(self, routine, timeout=None):
+        future = asyncio.run_coroutine_threadsafe(routine, self.bleak_loop)
+        return future.result(timeout)
+
+    async def get_bleak_client(self, device):
+        return bleak.BleakClient(device.getAddress())
+
+    def ble_connect(self, device):
+        with self.await_bleak(self.get_bleak_client(device)) as client:
             for service in client.services:
                 RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
                 if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
@@ -207,6 +222,10 @@ class AndroidBluetoothManager():
                     RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
                     if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
                         RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
+
+    def connect(self, device_address=None):
+        self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
+
 
     def bt_enabled(self):
         return self.bt_adapter.getDefaultAdapter().isEnabled()
@@ -277,7 +296,7 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            asyncio.run(self.ble_connect(device))
+                            self.ble_connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
