@@ -197,6 +197,17 @@ class AndroidBluetoothManager():
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
 
+    async def ble_connect(self, device):
+        async with bleak.BleakClient(device.getAddress()) as client:
+            for service in client.services:
+                RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
+                if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
+                    RNS.log("Service correct!", RNS.LOG_DEBUG)
+                for characteristic in service.characteristics:
+                    RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
+                    if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
+                        RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
+
     def bt_enabled(self):
         return self.bt_adapter.getDefaultAdapter().isEnabled()
 
@@ -266,15 +277,7 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            async with bleak.BleakClient(device.getAddress()) as client:
-                                for service in client.services:
-                                    RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
-                                    if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
-                                        RNS.log("Service correct!", RNS.LOG_DEBUG)
-                                    for characteristic in service.characteristics:
-                                        RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
-                                        if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
-                                            RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
+                            self.ble_connect(self, device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
