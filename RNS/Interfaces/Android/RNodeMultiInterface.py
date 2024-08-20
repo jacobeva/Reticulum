@@ -191,7 +191,7 @@ class AndroidBluetoothManager():
 
         # BLE 
         self.bleak_loop = None
-        self.bleak_thread_ready = None
+        self.bleak_thread_ready = threading.Event()
 
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
