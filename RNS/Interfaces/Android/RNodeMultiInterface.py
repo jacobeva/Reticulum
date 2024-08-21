@@ -192,6 +192,7 @@ class AndroidBluetoothManager():
         # BLE 
         self.bleak_loop = None
         self.bleak_thread_ready = threading.Event()
+        self.run_bleak_loop()
 
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
@@ -213,7 +214,7 @@ class AndroidBluetoothManager():
         return bleak.BleakClient(device.getAddress())
 
     def ble_connect(self, device):
-        with self.await_bleak(self.get_bleak_client(device)) as client:
+        with self.await_bleak(self.get_bleak_client(device), 2) as client:
             for service in client.services:
                 RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
                 if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
@@ -296,7 +297,6 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            self.run_bleak_loop()
                             self.ble_connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
