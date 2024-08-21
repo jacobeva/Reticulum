@@ -191,9 +191,9 @@ class AndroidBluetoothManager():
 
         # BLE
         self.bleak_loop = None
+        self.bleak_thread_ready = threading.Event()
         self.bleak_thread = threading.Thread(target=self.run_bleak_loop)
         self.bleak_thread.daemon = True
-        self.bleak_thread_ready = threading.Event()
         self.bleak_thread.start()
         self.bleak_thread_ready.wait()
 
@@ -217,7 +217,8 @@ class AndroidBluetoothManager():
         return bleak.BleakClient(device.getAddress())
 
     def ble_connect(self, device):
-        with self.await_bleak(self.get_bleak_client(device), 2) as client:
+        RNS.log("Entering BLE connect!", RNS.LOG_DEBUG)
+        with self.await_bleak(self.get_bleak_client(device)) as client:
             for service in client.services:
                 RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
                 if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
