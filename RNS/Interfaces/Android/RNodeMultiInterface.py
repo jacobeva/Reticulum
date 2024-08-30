@@ -164,6 +164,7 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
         NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
         NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+    @require_bluetooth_enabled
     def connect(self, device):
         self.device = device
         self.connect_gatt(self.device)
