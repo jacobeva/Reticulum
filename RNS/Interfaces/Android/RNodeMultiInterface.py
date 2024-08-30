@@ -222,7 +222,7 @@ class AndroidBluetoothManager():
     def ble_connect_serial(self, device):
         RNS.log("Entering BLE connect serial!", RNS.LOG_DEBUG)
         client = self.await_bleak(self.get_bleak_client(device))
-        self.await_bleak(self.ble_connect, client)
+        self.await_bleak(self.ble_connect(client))
         for service in client.services:
             RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
             if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
