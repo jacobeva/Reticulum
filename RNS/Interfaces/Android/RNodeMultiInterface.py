@@ -194,14 +194,9 @@ class AndroidBluetoothManager():
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
 
-    async def get_bleak_client(self, device):
-        return bleak.BleakClient(device.getAddress())
-
-    async def ble_connect(self, client):
-        await client.connect()
-
     def ble_connect_serial(self, device):
         RNS.log("Entering BLE connect serial!", RNS.LOG_DEBUG)
+        RNS.log("Address: " + str(device.getAddress()), RNS.LOG_DEBUG)
         client = asyncio.run(bleak.BleakClient(device.getAddress()))
         asyncio.run(client.connect())
         for service in client.services:
