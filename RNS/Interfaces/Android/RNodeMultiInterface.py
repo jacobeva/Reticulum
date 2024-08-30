@@ -222,15 +222,15 @@ class AndroidBluetoothManager():
     def ble_connect_serial(self, device):
         RNS.log("Entering BLE connect serial!", RNS.LOG_DEBUG)
         client = self.await_bleak(self.get_bleak_client(device))
-        self.await_bleak(self.ble_connect(client))
-        for service in client.services:
-            RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
-            if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
-                RNS.log("Service correct!", RNS.LOG_DEBUG)
-            for characteristic in service.characteristics:
-                RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
-                if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
-                    RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
+        #self.await_bleak(self.ble_connect(client))
+        #for service in client.services:
+        #    RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
+        #    if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
+        #        RNS.log("Service correct!", RNS.LOG_DEBUG)
+        #    for characteristic in service.characteristics:
+        #        RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
+        #        if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
+        #            RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
