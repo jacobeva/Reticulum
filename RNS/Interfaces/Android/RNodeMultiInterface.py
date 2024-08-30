@@ -197,7 +197,7 @@ class AndroidBluetoothManager():
     def ble_connect_serial(self, device):
         RNS.log("Entering BLE connect serial!", RNS.LOG_DEBUG)
         RNS.log("Address: " + str(device.getAddress()), RNS.LOG_DEBUG)
-        client = asyncio.run(bleak.BleakClient(device.getAddress()))
+        client = asyncio.run(bleak.BleakClientP4Android(device.getAddress()))
         asyncio.run(client.connect())
         for service in client.services:
             RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
