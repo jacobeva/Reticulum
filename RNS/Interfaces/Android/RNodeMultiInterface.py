@@ -189,29 +189,10 @@ class AndroidBluetoothManager():
         self.bt_device  = autoclass('android.bluetooth.BluetoothDevice')
         self.bt_device_type = None
 
-        # BLE
-        self.bleak_loop = None
-        self.bleak_thread_ready = threading.Event()
-        self.bleak_thread = threading.Thread(target=self.run_bleak_loop)
-        self.bleak_thread.daemon = True
-        self.bleak_thread.start()
-        self.bleak_thread_ready.wait()
-
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
-
-    # BLE
-    def run_bleak_loop(self):
-        self.bleak_loop = asyncio.new_event_loop()
-        # Event loop is now available.
-        self.bleak_thread_ready.set()
-        self.bleak_loop.run_forever()
-
-    def await_bleak(self, routine, timeout=None):
-        future = asyncio.run_coroutine_threadsafe(routine, self.bleak_loop)
-        return future.result(timeout)
 
     async def get_bleak_client(self, device):
         return bleak.BleakClient(device.getAddress())
@@ -221,16 +202,16 @@ class AndroidBluetoothManager():
 
     def ble_connect_serial(self, device):
         RNS.log("Entering BLE connect serial!", RNS.LOG_DEBUG)
-        client = self.await_bleak(self.get_bleak_client(device))
-        #self.await_bleak(self.ble_connect(client))
-        #for service in client.services:
-        #    RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
-        #    if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
-        #        RNS.log("Service correct!", RNS.LOG_DEBUG)
-        #    for characteristic in service.characteristics:
-        #        RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
-        #        if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
-        #            RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
+        client = asyncio.run(bleak.BleakClient(device.getAddress()))
+        asyncio.run(client.connect())
+        for service in client.services:
+            RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
+            if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
+                RNS.log("Service correct!", RNS.LOG_DEBUG)
+            for characteristic in service.characteristics:
+                RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
+                if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
+                    RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
