@@ -21,8 +21,7 @@
 # SOFTWARE.
 
 from RNS.Interfaces.Interface import Interface
-import asyncio
-import bleak
+from able import BluetoothDispatcher, GATT_SUCCESS
 from time import sleep
 import sys
 import threading
@@ -159,14 +158,36 @@ class KISS():
         data = data.replace(bytes([0xc0]), bytes([0xdb, 0xdc]))
         return data
 
+class AndroidBLEDispatcher(BluetoothDispatcher):
+    def __init__(self):
+        NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+        NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+        NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+
+    def connect(self, device):
+        self.device = device
+        self.connect_gatt(self.device)
+
+
+    def on_connection_state_change(self, status, state):
+        if status == GATT_SUCCESS and state:  # connection established
+            RNS.log("Connected to RNode over BLE!", RNS.LOG_DEBUG)
+            self.discover_services()  # discover what services a device offer
+        else:  # disconnection or error
+            RNS.log("Could not connect to RNode over BLE!", RNS.LOG_DEBUG)
+            self.close_gatt()  # close current connection
+
+    def on_services(self, status, services):
+        # 0x2a06 is a standard code for "Alert Level" characteristic
+        # https://www.bluetooth.com/specifications/gatt/viewer?attributeXmlFile=org.bluetooth.characteristic.alert_level.xml
+        self.rx_char = None
+        self.rx_char = services.search(self.NORDIC_UART_RX_UUID)
+        if self.rx_char is not None:
+            RNS.log("Found BLE characteristic!", RNS.LOG_DEBUG)
 
 class AndroidBluetoothManager():
     def __init__(self, owner, target_device_name = None, target_device_address = None):
         from jnius import autoclass, cast
-
-        NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-        NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-        NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
         DEVICE_TYPE_CLASSIC = 1
         DEVICE_TYPE_LE = 2
@@ -193,20 +214,6 @@ class AndroidBluetoothManager():
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
-
-    def ble_connect_serial(self, device):
-        RNS.log("Entering BLE connect serial!", RNS.LOG_DEBUG)
-        RNS.log("Address: " + str(device.getAddress()), RNS.LOG_DEBUG)
-        client = asyncio.run(bleak.BleakClientP4Android(device.getAddress()))
-        asyncio.run(client.connect())
-        for service in client.services:
-            RNS.log("Service UUID: " + service.uuid, RNS.LOG_DEBUG)
-            if service == AndroidBluetoothManager.NORDIC_UART_SERVICE_UUID:
-                RNS.log("Service correct!", RNS.LOG_DEBUG)
-            for characteristic in service.characteristics:
-                RNS.log("Characteristic UUID: " + characteristic.uuid, RNS.LOG_DEBUG)
-                if (characteristic == AndroidBluetoothManager.NORDIC_UART_RX_UUID) or (characteristic == AndroidBluetoothManager.NORDIC_UART_TX_UUID):
-                    RNS.log("Characteristic correct!", RNS.LOG_DEBUG)
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
@@ -281,7 +288,8 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            self.ble_connect_serial(device)
+                            ble = AndroidBLEDispatcher()
+                            ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
