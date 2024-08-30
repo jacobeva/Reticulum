@@ -22,6 +22,7 @@
 
 from RNS.Interfaces.Interface import Interface
 from able import BluetoothDispatcher, GATT_SUCCESS
+from able.adapter import require_bluetooth_enabled
 from time import sleep
 import sys
 import threading
