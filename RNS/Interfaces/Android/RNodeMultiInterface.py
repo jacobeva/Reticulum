@@ -23,7 +23,6 @@
 from RNS.Interfaces.Interface import Interface
 from able import BluetoothDispatcher, GATT_SUCCESS
 from able.adapter import require_bluetooth_enabled
-from android.runnable import run_on_ui_thread
 # debug
 import traceback
 
@@ -193,7 +192,7 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
             RNS.log("Found BLE characteristic!", RNS.LOG_DEBUG)
 
 class AndroidBluetoothManager():
-    def __init__(self, owner, target_device_name = None, target_device_address = None):
+    def __init__(self, owner, ble_dispatcher = None, target_device_name = None, target_device_address = None):
         from jnius import autoclass, cast
 
         DEVICE_TYPE_CLASSIC = 1
@@ -218,17 +217,12 @@ class AndroidBluetoothManager():
         self.bt_device_type = None
 
         # BLE
-        self.ble = None
+        self.ble = ble_dispatcher
 
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
-
-    @run_on_ui_thread
-    def init_ble(self):
-        self.ble = AndroidBLEDispatcher()
-        RNS.log("Created BLE dispatcher!", RNS.LOG_DEBUG)
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
@@ -302,7 +296,6 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            self.init_ble()
                             self.ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
@@ -375,7 +368,7 @@ class RNodeMultiInterface(Interface):
 
     MAX_SUBINTERFACES = 11
 
-    def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, allow_bluetooth = False, target_device_name = None, target_device_address = None):
+    def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, ble_dispatcher = None, allow_bluetooth = False, target_device_name = None, target_device_address = None):
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
@@ -461,6 +454,8 @@ class RNodeMultiInterface(Interface):
         self.last_port_io = 0
         self.port_io_timeout = RNodeMultiInterface.PORT_IO_TIMEOUT
         self.last_imagedata = None
+
+        self.ble = ble_dispatcher
 
         self.validcfg  = True
         if id_interval != None and id_callsign != None:
@@ -577,6 +572,7 @@ class RNodeMultiInterface(Interface):
             if self.bt_manager == None:
                 self.bt_manager = AndroidBluetoothManager(
                     owner = self,
+                    ble_dispatcher = self.ble,
                     target_device_name = self.bt_target_device_name,
                     target_device_address = self.bt_target_device_address
                 )
