@@ -23,7 +23,10 @@
 from RNS.Interfaces.Interface import Interface
 from able import BluetoothDispatcher, GATT_SUCCESS
 from able.adapter import require_bluetooth_enabled
-from kivy.clock import mainthread
+from android.runnable import run_on_ui_thread
+# debug
+import traceback
+
 from time import sleep
 import sys
 import threading
@@ -222,14 +225,10 @@ class AndroidBluetoothManager():
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
 
-    @mainthread
+    @run_on_ui_thread
     def init_ble(self):
-        try:
-            self.ble = AndroidBLEDispatcher()
-            RNS.log("Created BLE dispatcher!", RNS.LOG_DEBUG)
-        except Exception as e:
-            RNS.log("Could not create BLE dispatcher!", RNS.LOG_DEBUG)
-            RNS.log("The contained exception was: "+str(e), RNS.LOG_DEBUG)
+        self.ble = AndroidBLEDispatcher()
+        RNS.log("Created BLE dispatcher!", RNS.LOG_DEBUG)
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
@@ -304,11 +303,12 @@ class AndroidBluetoothManager():
                     if True:
                         try:
                             self.init_ble()
-                            sleep(10)
                             self.ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
+                            # debug
+                            RNS.log(traceback.format_exc())
 
 
                 except Exception as e:
