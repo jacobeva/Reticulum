@@ -214,6 +214,9 @@ class AndroidBluetoothManager():
         self.bt_device  = autoclass('android.bluetooth.BluetoothDevice')
         self.bt_device_type = None
 
+        # BLE
+        self.ble = None
+
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
