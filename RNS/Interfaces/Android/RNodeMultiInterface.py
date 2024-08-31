@@ -189,6 +189,11 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
         if self.rx_char is not None:
             RNS.log("Found BLE characteristic!", RNS.LOG_DEBUG)
 
+# Must be declared outside of class as when declared in class and called, an error occurs
+@run_on_ui_thread
+def init_ble():
+    return AndroidBLEDispatcher()
+
 class AndroidBluetoothManager():
     def __init__(self, owner, target_device_name = None, target_device_address = None):
         from jnius import autoclass, cast
@@ -218,10 +223,6 @@ class AndroidBluetoothManager():
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
-
-    @run_on_ui_thread
-    def init_ble(self):
-        return AndroidBLEDispatcher()
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
@@ -295,7 +296,7 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            ble = self.init_ble()
+                            ble = init_ble()
                             ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
