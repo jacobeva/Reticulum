@@ -387,6 +387,7 @@ class RNodeMultiInterface(Interface):
                 if allow_bluetooth:
                     self.bt_manager = AndroidBluetoothManager(
                         owner = self,
+                        ble_dispatcher = ble_dispatcher,
                         target_device_name = self.bt_target_device_name,
                         target_device_address = self.bt_target_device_address
                     )
