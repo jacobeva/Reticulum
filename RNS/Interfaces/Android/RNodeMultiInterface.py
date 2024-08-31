@@ -161,7 +161,6 @@ class KISS():
         return data
 
 class AndroidBLEDispatcher(BluetoothDispatcher):
-    @run_on_ui_thread
     def __init__(self):
         NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
         NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -173,7 +172,6 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
     def connect(self, device):
         self.device = device
         self.connect_gatt(self.device)
-
 
     def on_connection_state_change(self, status, state):
         if status == GATT_SUCCESS and state:  # connection established
@@ -221,9 +219,12 @@ class AndroidBluetoothManager():
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
 
+    @run_on_ui_thread
+    def init_ble(self):
+        return AndroidBLEDispatcher()
+
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
-
 
     def bt_enabled(self):
         return self.bt_adapter.getDefaultAdapter().isEnabled()
@@ -294,7 +295,7 @@ class AndroidBluetoothManager():
                     #elif (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                     if True:
                         try:
-                            ble = AndroidBLEDispatcher()
+                            ble = self.init_ble()
                             ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
