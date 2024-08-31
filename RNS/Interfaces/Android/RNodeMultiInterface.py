@@ -291,8 +291,8 @@ class AndroidBluetoothManager():
                     if True:
                         try:
                             ble = AndroidBLEDispatcher()
-                            ble.startScan()
-                            ble.stopScan()
+                            ble.start_scan()
+                            ble.stop_scan()
                             ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
