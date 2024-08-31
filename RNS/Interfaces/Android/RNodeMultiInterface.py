@@ -165,6 +165,8 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
         NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
         NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+        super(AndroidBLEDispatcher, self).__init__()
+
     @require_bluetooth_enabled
     def connect(self, device):
         self.device = device
@@ -291,8 +293,6 @@ class AndroidBluetoothManager():
                     if True:
                         try:
                             ble = AndroidBLEDispatcher()
-                            ble.start_scan()
-                            ble.stop_scan()
                             ble.connect(device)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
