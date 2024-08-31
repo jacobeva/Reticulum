@@ -225,6 +225,7 @@ class AndroidBluetoothManager():
     @mainthread
     def init_ble(self):
         self.ble = AndroidBLEDispatcher()
+        RNS.log("Created BLE dispatcher!", RNS.LOG_DEBUG)
 
     def connect(self, device_address=None):
         self.rfcomm_socket = self.remote_device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
