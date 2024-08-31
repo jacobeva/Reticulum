@@ -23,6 +23,7 @@
 from RNS.Interfaces.Interface import Interface
 from able import BluetoothDispatcher, GATT_SUCCESS
 from able.adapter import require_bluetooth_enabled
+from android.runnable import run_on_ui_thread
 from time import sleep
 import sys
 import threading
@@ -160,6 +161,7 @@ class KISS():
         return data
 
 class AndroidBLEDispatcher(BluetoothDispatcher):
+    @run_on_ui_thread
     def __init__(self):
         NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
         NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
