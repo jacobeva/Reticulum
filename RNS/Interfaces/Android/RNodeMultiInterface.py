@@ -354,7 +354,7 @@ class AndroidBluetoothManager():
 
     def close(self):
         if self.connected:
-            if self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC
+            if self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
                 if self.rfcomm_reader != None:
                     self.rfcomm_reader.close()
                     self.rfcomm_reader = None
