@@ -261,6 +261,7 @@ class AndroidBluetoothManager():
         self.target_device_address = target_device_address
         self.potential_remote_devices = []
         self.rfcomm_socket = None
+        self.rfcomm_reader = None
         self.connected_device = None
         self.connection_failed = False
         self.bt_adapter = autoclass('android.bluetooth.BluetoothAdapter')
@@ -556,10 +557,18 @@ class RNodeMultiInterface(Interface):
         try:
             self.open_port()
 
-            if self.serial.is_open:
-                self.configure_device()
+            if self.serial != None:
+                if self.serial.is_open:
+                    self.configure_device()
+                else:
+                    raise IOError("Could not open serial port")
+            elif self.bt_manager != None:
+                if self.bt_manager.connected:
+                    self.configure_device()
+                else:
+                    raise IOError("Could not connect to any Bluetooth devices")
             else:
-                raise IOError("Could not open serial port")
+                raise IOError("Neither serial port nor Bluetooth devices available")
 
         except Exception as e:
             RNS.log("Could not open serial port for interface "+str(self), RNS.LOG_ERROR)
