@@ -111,6 +111,7 @@ class KISS():
 
     PLATFORM_AVR   = 0x90
     PLATFORM_ESP32 = 0x80
+    PLATFORM_NRF52 = 0x70
 
     SX127X    = 0x00
     SX1276    = 0x01
@@ -358,6 +359,7 @@ class AndroidBluetoothManager():
                                 self.connected = True
                                 self.connected_device = device
                                 RNS.log("Bluetooth (LE) device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
+                                time.sleep(1)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
@@ -677,13 +679,12 @@ class RNodeMultiInterface(Interface):
         thread.start()
 
         self.detect()
-        sleep(0.2)
+        sleep(0.5)
         
         if not self.detected:
-            RNS.log("Could not detect device for "+str(self), RNS.LOG_ERROR)
-            self.serial.close()
+            raise IOError("Could not detect device")
         else:
-            if self.platform == KISS.PLATFORM_ESP32:
+            if self.platform == KISS.PLATFORM_ESP32 or self.platform == KISS.PLATFORM_NRF52:
                 self.display = True
 
         RNS.log("Serial port "+self.port+" is now open")
