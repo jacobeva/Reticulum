@@ -163,10 +163,11 @@ class KISS():
         return data
 
 class AndroidBLEDispatcher(BluetoothDispatcher):
+    NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+    NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+    NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+
     def __init__(self):
-        NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-        NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-        NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
         super(AndroidBLEDispatcher, self).__init__()
 
@@ -233,12 +234,12 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
 
 class AndroidBluetoothManager():
+    DEVICE_TYPE_CLASSIC = 1
+    DEVICE_TYPE_LE = 2
+    DEVICE_TYPE_DUAL = 3
+
     def __init__(self, owner, ble_dispatcher = None, target_device_name = None, target_device_address = None):
         from jnius import autoclass, cast
-
-        DEVICE_TYPE_CLASSIC = 1
-        DEVICE_TYPE_LE = 2
-        DEVICE_TYPE_DUAL = 3
 
         self.owner = owner
         self.connected = False
