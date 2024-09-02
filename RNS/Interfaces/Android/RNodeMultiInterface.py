@@ -167,29 +167,44 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
     NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
     NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+    CONNECT_TIMEOUT = 30
+
     def __init__(self):
 
         super(AndroidBLEDispatcher, self).__init__()
 
-        self.manager = None
         self.device = None
         self.rx_char = None
         self.tx_char = None
         self.data = None
+        self.connected = False
 
     @require_bluetooth_enabled
     def connect(self, device):
         self.device = device
         self.connect_gatt(self.device)
 
+    def connected(self):
+        end = time.time() + AndroidBLEDispatcher.CONNECT_TIMEOUT
+
+        while time.time() < end:
+            if self.connected:
+                return True
+            time.sleep(1)
+
+        return False
+
     def close(self):
+        self.connected = False
         self.close_gatt()
 
     def on_connection_state_change(self, status, state):
         if status == GATT_SUCCESS and state:  # connection established
+            self.connected = True
             RNS.log("Connected to RNode over BLE!", RNS.LOG_DEBUG)
             self.discover_services()
         else:  # disconnection or error
+            self.connected = False
             RNS.log("Could not connect to RNode over BLE!", RNS.LOG_DEBUG)
             self.close_gatt()  # close current connection
 
@@ -205,15 +220,14 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
                 if self.enable_notifications(self.tx_char):
                     RNS.log("Enabled notifications for BLE TX characteristic!", RNS.LOG_DEBUG)
 
-                    if self.manager is not None:
-                        self.manager.connected = True
-                        self.manager.connected_device = self.device
-                    else:
-                        RNS.log("Could not find manager instance for AndroidBLEDispatcher.", RNS.LOG_DEBUG)
+                    self.connected = True
 
     def on_characteristic_changed(self, characteristic):
         if characteristic == self.tx_char:
-            self.data = characteristic.getValue(0)
+            if self.data is None:
+                self.data = characteristic.getValue(0)
+            else:
+                self.data += characteristic.getValue(0)
 
     def available(self):
         if self.data is not None:
@@ -255,9 +269,6 @@ class AndroidBluetoothManager():
 
         # BLE
         self.ble = ble_dispatcher
-
-        if self.ble is not None:
-            self.ble.manager = self
 
         # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
@@ -342,6 +353,10 @@ class AndroidBluetoothManager():
                     if ((self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL)) and self.ble is not None:
                         try:
                             self.ble.connect(device)
+                            if self.ble.connected():
+                                self.connected = True
+                                self.connected_device = device
+                                RNS.log("Bluetooth (LE) device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
