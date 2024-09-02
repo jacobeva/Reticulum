@@ -184,7 +184,7 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
         self.device = device
         self.connect_gatt(self.device)
 
-    def connected(self):
+    def wait_connected(self):
         end = time.time() + AndroidBLEDispatcher.CONNECT_TIMEOUT
 
         while time.time() < end:
@@ -353,7 +353,7 @@ class AndroidBluetoothManager():
                     if ((self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL)) and self.ble is not None:
                         try:
                             self.ble.connect(device)
-                            if self.ble.connected():
+                            if self.ble.wait_connected():
                                 self.connected = True
                                 self.connected_device = device
                                 RNS.log("Bluetooth (LE) device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
