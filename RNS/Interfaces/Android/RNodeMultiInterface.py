@@ -225,14 +225,13 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
                     self.connected = True
 
     def on_characteristic_changed(self, characteristic):
-        RNS.log("Characteristic changed!", RNS.LOG_DEBUG)
         if characteristic.getUuid().toString() == AndroidBLEDispatcher.NORDIC_UART_TX_UUID:
             RNS.log("Received TX characteristic notify!", RNS.LOG_DEBUG)
             if self.data is None:
-                self.data = characteristic.getValue(0)
+                self.data = characteristic.getValue()
                 RNS.log("Set TX char data. Type: " + type(self.data), RNS.LOG_DEBUG)
             else:
-                self.data += characteristic.getValue(0)
+                self.data += characteristic.getValue()
                 RNS.log("Appended TX char data", RNS.LOG_DEBUG)
 
     def available(self):
