@@ -229,10 +229,8 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
             RNS.log("Received TX characteristic notify!", RNS.LOG_DEBUG)
             if self.data is None:
                 self.data = characteristic.getValue()
-                RNS.log("Set TX char data. Type: " + type(self.data), RNS.LOG_DEBUG)
             else:
-                self.data += characteristic.getValue()
-                RNS.log("Appended TX char data", RNS.LOG_DEBUG)
+                self.data.extend(characteristic.getValue())
 
     def available(self):
         if self.data is not None:
