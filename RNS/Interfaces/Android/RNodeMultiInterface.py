@@ -203,8 +203,8 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
     def on_connection_state_change(self, status, state):
         if status == GATT_SUCCESS and state:  # connection established
-            self.gatt.connect()
             RNS.log("Connected to RNode over BLE!", RNS.LOG_DEBUG)
+            time.sleep(1)
             self.discover_services()
         else:  # disconnection or error
             self.connected = False
