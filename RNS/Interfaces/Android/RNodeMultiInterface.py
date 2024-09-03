@@ -688,8 +688,19 @@ class RNodeMultiInterface(Interface):
             if self.platform == KISS.PLATFORM_ESP32 or self.platform == KISS.PLATFORM_NRF52:
                 self.display = True
 
-        RNS.log("Serial port "+self.port+" is now open")
+        if not self.firmware_ok:
+            raise IOError("Invalid device firmware")
+
+        if self.serial != None and self.port != None:
+            self.timeout = 200
+            RNS.log("Serial port "+self.port+" is now open")
+
+        if self.bt_manager != None and self.bt_manager.connected:
+            self.timeout = 1500
+            RNS.log("Bluetooth connection to RNode now open")
+
         RNS.log("Creating subinterfaces...", RNS.LOG_VERBOSE)
+
         for subint in self.subint_config:
             subint_vport = int(subint[1])
             # check if index of vport exists in interface types array (the index corresponds to the vport for that interface)
