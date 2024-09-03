@@ -413,7 +413,7 @@ class AndroidBluetoothManager():
             elif self.connected and (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE or self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                 available = self.ble.available()
 
-                RNS.log("Available is " + available, RNS.LOG_DEBUG)
+                RNS.log("Available is " + str(available), RNS.LOG_DEBUG)
 
                 if available:
                     RNS.log("Returning BLE data!", RNS.LOG_DEBUG)
