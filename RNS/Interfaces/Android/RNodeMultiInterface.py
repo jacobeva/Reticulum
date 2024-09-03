@@ -226,10 +226,13 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
     def on_characteristic_changed(self, characteristic):
         if characteristic == self.tx_char:
+            RNS.log("Received TX characteristic notify!", RNS.LOG_DEBUG)
             if self.data is None:
                 self.data = characteristic.getValue(0)
+                RNS.log("Set TX char data. Type: " + type(self.data), RNS.LOG_DEBUG)
             else:
                 self.data += characteristic.getValue(0)
+                RNS.log("Appended TX char data", RNS.LOG_DEBUG)
 
     def available(self):
         if self.data is not None:
@@ -410,9 +413,13 @@ class AndroidBluetoothManager():
             elif self.connected and (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE or self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                 available = self.ble.available()
 
+                RNS.log("Available is " + available, RNS.LOG_DEBUG)
+
                 if available:
+                    RNS.log("Returning BLE data!", RNS.LOG_DEBUG)
                     return self.ble.read()
                 else:
+                    RNS.log("Returning empty array for BLE data.", RNS.LOG_DEBUG)
                     return bytes([])
             else:
                 raise IOError("No RFcomm socket available or BLE device disconnected")
