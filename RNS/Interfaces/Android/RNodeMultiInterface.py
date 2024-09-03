@@ -203,7 +203,6 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
     def on_connection_state_change(self, status, state):
         if status == GATT_SUCCESS and state:  # connection established
-            self.connected = True
             RNS.log("Connected to RNode over BLE!", RNS.LOG_DEBUG)
             self.discover_services()
         else:  # disconnection or error
@@ -222,8 +221,9 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
                 if self.enable_notifications(self.tx_char):
                     RNS.log("Enabled notifications for BLE TX characteristic!", RNS.LOG_DEBUG)
-
                     self.connected = True
+
+                    time.sleep(2)
 
     def on_characteristic_changed(self, characteristic):
         if characteristic == self.tx_char:
@@ -361,7 +361,6 @@ class AndroidBluetoothManager():
                                 self.connected = True
                                 self.connected_device = device
                                 RNS.log("Bluetooth (LE) device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
-                                time.sleep(1)
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
