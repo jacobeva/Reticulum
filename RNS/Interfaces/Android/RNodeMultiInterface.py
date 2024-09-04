@@ -23,8 +23,6 @@
 from RNS.Interfaces.Interface import Interface
 from able import BluetoothDispatcher, GATT_SUCCESS
 from able.adapter import require_bluetooth_enabled
-# debug
-import traceback
 
 from time import sleep
 import sys
@@ -217,26 +215,26 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
         self.rx_char = services.search(AndroidBLEDispatcher.NORDIC_UART_RX_UUID)
         if self.rx_char is not None:
-            RNS.log("Found BLE RX characteristic!", RNS.LOG_DEBUG)
+            RNS.log("Found BLE RX characteristic!", RNS.LOG_EXTREME)
 
             self.tx_char = services.search(AndroidBLEDispatcher.NORDIC_UART_TX_UUID)
             if self.tx_char is not None:
-                RNS.log("Found BLE TX characteristic!", RNS.LOG_DEBUG)
+                RNS.log("Found BLE TX characteristic!", RNS.LOG_EXTREME)
 
                 if self.enable_notifications(self.tx_char):
-                    RNS.log("Enabled notifications for BLE TX characteristic!", RNS.LOG_DEBUG)
+                    RNS.log("Enabled notifications for BLE TX characteristic!", RNS.LOG_EXTREME)
                     self.connected = True
 
     def on_mtu_changed(self, mtu, status):
         # check if MTU is now higher than the default
         if status == GATT_SUCCESS and mtu > 23:
-            RNS.log("BLE MTU set!", RNS.LOG_DEBUG)
+            RNS.log("BLE MTU set!", RNS.LOG_EXTREME)
         else:
-            RNS.log("BLE MTU not set, error!", RNS.LOG_DEBUG)
+            RNS.log("BLE MTU not set, error!", RNS.LOG_EXTREME)
 
     def on_characteristic_changed(self, characteristic):
         if characteristic.getUuid().toString() == AndroidBLEDispatcher.NORDIC_UART_TX_UUID:
-            RNS.log("Received TX characteristic notify!", RNS.LOG_DEBUG)
+            RNS.log("Received TX characteristic notify!", RNS.LOG_EXTREME)
             if self.data is None:
                 self.data = bytearray(characteristic.getValue())
             else:
@@ -374,8 +372,6 @@ class AndroidBluetoothManager():
                         except Exception as e:
                             RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                             RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
-                            # debug
-                            RNS.log(traceback.format_exc())
 
 
                 except Exception as e:
@@ -421,13 +417,9 @@ class AndroidBluetoothManager():
             elif self.connected and (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE or self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
                 available = self.ble.available()
 
-                RNS.log("Available is " + str(available), RNS.LOG_DEBUG)
-
                 if available:
-                    RNS.log("Returning BLE data!", RNS.LOG_DEBUG)
                     return self.ble.read()
                 else:
-                    RNS.log("Returning empty array for BLE data.", RNS.LOG_DEBUG)
                     return bytes([])
             else:
                 raise IOError("No RFcomm socket available or BLE device disconnected")
