@@ -228,9 +228,9 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
         if characteristic.getUuid().toString() == AndroidBLEDispatcher.NORDIC_UART_TX_UUID:
             RNS.log("Received TX characteristic notify!", RNS.LOG_DEBUG)
             if self.data is None:
-                self.data = characteristic.getValue()
+                self.data = bytearray(characteristic.getValue())
             else:
-                self.data.extend(characteristic.getValue())
+                self.data.extend(bytearray(characteristic.getValue()))
 
     def available(self):
         if self.data is not None:
