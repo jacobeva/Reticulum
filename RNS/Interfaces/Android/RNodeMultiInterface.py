@@ -1510,7 +1510,7 @@ class RNodeSubInterface(Interface):
 
     def validateRadioState(self):
         RNS.log("Waiting for radio configuration validation for "+str(self)+"...", RNS.LOG_VERBOSE)
-        sleep(0.25);
+        sleep(1);
 
         self.validcfg = True
         if (self.r_frequency != None and abs(self.frequency - int(self.r_frequency)) > 100):
