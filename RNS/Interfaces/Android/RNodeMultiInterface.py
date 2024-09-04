@@ -212,6 +212,9 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
             self.close_gatt()  # close current connection
 
     def on_services(self, status, services):
+        self.request_mtu(517)  # max possible MTU
+        time.sleep(0.5)
+
         self.rx_char = services.search(AndroidBLEDispatcher.NORDIC_UART_RX_UUID)
         if self.rx_char is not None:
             RNS.log("Found BLE RX characteristic!", RNS.LOG_DEBUG)
@@ -223,6 +226,13 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
                 if self.enable_notifications(self.tx_char):
                     RNS.log("Enabled notifications for BLE TX characteristic!", RNS.LOG_DEBUG)
                     self.connected = True
+
+    def on_mtu_changed(self, mtu, status):
+        # check if MTU is now higher than the default
+        if status == GATT_SUCCESS and mtu > 23:
+            RNS.log("BLE MTU set!", RNS.LOG_DEBUG)
+        else:
+            RNS.log("BLE MTU not set, error!", RNS.LOG_DEBUG)
 
     def on_characteristic_changed(self, characteristic):
         if characteristic.getUuid().toString() == AndroidBLEDispatcher.NORDIC_UART_TX_UUID:
