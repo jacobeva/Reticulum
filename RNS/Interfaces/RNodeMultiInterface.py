@@ -323,6 +323,10 @@ class RNodeMultiInterface(Interface):
                         lt_alock=subint[9]
                 )
 
+                if not interface.online:
+                    self.online = False
+                    raise IOError(str(interface) + " failed to initialise.")
+
                 interface.OUT = self.OUT
                 interface.IN  = self.IN
                 
