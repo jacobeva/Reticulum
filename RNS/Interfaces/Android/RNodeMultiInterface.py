@@ -197,6 +197,9 @@ class AndroidBLEDispatcher(BluetoothDispatcher):
 
     def close(self):
         self.connected = False
+
+        if self.tx_char is not None:
+            self.enable_notifications(self.tx_char, enable=False)
         self.close_gatt()
 
     def on_connection_state_change(self, status, state):
