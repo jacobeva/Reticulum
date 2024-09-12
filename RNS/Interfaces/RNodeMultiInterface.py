@@ -538,10 +538,11 @@ class RNodeMultiInterface(Interface):
                             command == KISS.CMD_INT10_DATA or
                             command == KISS.CMD_INT11_DATA)):
                         in_frame = False
-                        self.subinterfaces[KISS.int_data_cmd_to_index(command)].processIncoming(data_buffer)
-                        self.selected_index = KISS.int_data_cmd_to_index(command)
-                        data_buffer = b""
-                        command_buffer = b""
+                        if self.subinterfaces[KISS.int_data_cmd_to_index(command)] is not int:
+                            self.subinterfaces[KISS.int_data_cmd_to_index(command)].processIncoming(data_buffer)
+                            self.selected_index = KISS.int_data_cmd_to_index(command)
+                            data_buffer = b""
+                            command_buffer = b""
                     elif (byte == KISS.FEND):
                         in_frame = True
                         command = KISS.CMD_UNKNOWN
@@ -584,9 +585,10 @@ class RNodeMultiInterface(Interface):
                                     escape = False
                                 command_buffer = command_buffer+bytes([byte])
                                 if (len(command_buffer) == 4):
-                                    self.subinterfaces[self.selected_index].r_frequency = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
-                                    RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting frequency is "+str(self.subinterfaces[self.selected_index].r_frequency/1000000.0)+" MHz", RNS.LOG_DEBUG)
-                                    self.subinterfaces[self.selected_index].updateBitrate()
+                                    if self.subinterfaces[self.selected_index] is not int:
+                                        self.subinterfaces[self.selected_index].r_frequency = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
+                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting frequency is "+str(self.subinterfaces[self.selected_index].r_frequency/1000000.0)+" MHz", RNS.LOG_DEBUG)
+                                        self.subinterfaces[self.selected_index].updateBitrate()
 
                         elif (command == KISS.CMD_BANDWIDTH):
                             if (byte == KISS.FESC):
@@ -600,32 +602,38 @@ class RNodeMultiInterface(Interface):
                                     escape = False
                                 command_buffer = command_buffer+bytes([byte])
                                 if (len(command_buffer) == 4):
-                                    self.subinterfaces[self.selected_index].r_bandwidth = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
-                                    RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting bandwidth is "+str(self.subinterfaces[self.selected_index].r_bandwidth/1000.0)+" KHz", RNS.LOG_DEBUG)
-                                    self.subinterfaces[self.selected_index].updateBitrate()
+                                    if self.subinterfaces[self.selected_index] is not int:
+                                        self.subinterfaces[self.selected_index].r_bandwidth = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
+                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting bandwidth is "+str(self.subinterfaces[self.selected_index].r_bandwidth/1000.0)+" KHz", RNS.LOG_DEBUG)
+                                        self.subinterfaces[self.selected_index].updateBitrate()
 
                         elif (command == KISS.CMD_TXPOWER):
                             txp = byte - 256 if byte > 127 else byte
-                            self.subinterfaces[self.selected_index].r_txpower = txp
-                            RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting TX power is "+str(self.subinterfaces[self.selected_index].r_txpower)+" dBm", RNS.LOG_DEBUG)
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_txpower = txp
+                                RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting TX power is "+str(self.subinterfaces[self.selected_index].r_txpower)+" dBm", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_SF):
-                            self.subinterfaces[self.selected_index].r_sf = byte
-                            RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting spreading factor is "+str(self.subinterfaces[self.selected_index].r_sf), RNS.LOG_DEBUG)
-                            self.subinterfaces[self.selected_index].updateBitrate()
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_sf = byte
+                                RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting spreading factor is "+str(self.subinterfaces[self.selected_index].r_sf), RNS.LOG_DEBUG)
+                                self.subinterfaces[self.selected_index].updateBitrate()
                         elif (command == KISS.CMD_CR):
-                            self.subinterfaces[self.selected_index].r_cr = byte
-                            RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting coding rate is "+str(self.subinterfaces[self.selected_index].r_cr), RNS.LOG_DEBUG)
-                            self.subinterfaces[self.selected_index].updateBitrate()
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_cr = byte
+                                RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting coding rate is "+str(self.subinterfaces[self.selected_index].r_cr), RNS.LOG_DEBUG)
+                                self.subinterfaces[self.selected_index].updateBitrate()
                         elif (command == KISS.CMD_RADIO_STATE):
-                            self.subinterfaces[self.selected_index].r_state = byte
-                            if self.subinterfaces[self.selected_index].r_state:
-                                pass
-                                #RNS.log(str(self)+" Radio reporting state is online", RNS.LOG_DEBUG)
-                            else:
-                                RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting state is offline", RNS.LOG_DEBUG)
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_state = byte
+                                if self.subinterfaces[self.selected_index].r_state:
+                                    pass
+                                    #RNS.log(str(self)+" Radio reporting state is online", RNS.LOG_DEBUG)
+                                else:
+                                    RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting state is offline", RNS.LOG_DEBUG)
 
                         elif (command == KISS.CMD_RADIO_LOCK):
-                            self.subinterfaces[self.selected_index].r_lock = byte
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_lock = byte
                         elif (command == KISS.CMD_FW_VERSION):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -672,21 +680,23 @@ class RNodeMultiInterface(Interface):
                         #            self.r_stat_tx = ord(command_buffer[0]) << 24 | ord(command_buffer[1]) << 16 | ord(command_buffer[2]) << 8 | ord(command_buffer[3])
 
                         elif (command == KISS.CMD_STAT_RSSI):
-                            self.subinterfaces[self.selected_index].r_stat_rssi = byte-RNodeSubInterface.RSSI_OFFSET
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_stat_rssi = byte-RNodeSubInterface.RSSI_OFFSET
                         elif (command == KISS.CMD_STAT_SNR):
-                            self.subinterfaces[self.selected_index].r_stat_snr = int.from_bytes(bytes([byte]), byteorder="big", signed=True) * 0.25
-                            try:
-                                sfs = self.subinterfaces[self.selected_index].r_sf-7
-                                snr = self.subinterfaces[self.selected_index].r_stat_snr
-                                q_snr_min = RNodeSubInterface.Q_SNR_MIN_BASE-sfs*RNodeSubInterface.Q_SNR_STEP
-                                q_snr_max = RNodeSubInterface.Q_SNR_MAX
-                                q_snr_span = q_snr_max-q_snr_min
-                                quality = round(((snr-q_snr_min)/(q_snr_span))*100,1)
-                                if quality > 100.0: quality = 100.0
-                                if quality < 0.0: quality = 0.0
-                                self.subinterfaces[self.selected_index].r_stat_q = quality
-                            except:
-                                pass
+                            if self.subinterfaces[self.selected_index] is not int:
+                                self.subinterfaces[self.selected_index].r_stat_snr = int.from_bytes(bytes([byte]), byteorder="big", signed=True) * 0.25
+                                try:
+                                    sfs = self.subinterfaces[self.selected_index].r_sf-7
+                                    snr = self.subinterfaces[self.selected_index].r_stat_snr
+                                    q_snr_min = RNodeSubInterface.Q_SNR_MIN_BASE-sfs*RNodeSubInterface.Q_SNR_STEP
+                                    q_snr_max = RNodeSubInterface.Q_SNR_MAX
+                                    q_snr_span = q_snr_max-q_snr_min
+                                    quality = round(((snr-q_snr_min)/(q_snr_span))*100,1)
+                                    if quality > 100.0: quality = 100.0
+                                    if quality < 0.0: quality = 0.0
+                                    self.subinterfaces[self.selected_index].r_stat_q = quality
+                                except:
+                                    pass
                         elif (command == KISS.CMD_ST_ALOCK):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -700,8 +710,9 @@ class RNodeMultiInterface(Interface):
                                 command_buffer = command_buffer+bytes([byte])
                                 if (len(command_buffer) == 2):
                                     at = command_buffer[0] << 8 | command_buffer[1]
-                                    self.subinterfaces[self.selected_index].r_st_alock = at/100.0
-                                    RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting short-term airtime limit is "+str(self.subinterfaces[self.selected_index].r_st_alock)+"%", RNS.LOG_DEBUG)
+                                    if self.subinterfaces[self.selected_index] is not int:
+                                        self.subinterfaces[self.selected_index].r_st_alock = at/100.0
+                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting short-term airtime limit is "+str(self.subinterfaces[self.selected_index].r_st_alock)+"%", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_LT_ALOCK):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -715,8 +726,9 @@ class RNodeMultiInterface(Interface):
                                 command_buffer = command_buffer+bytes([byte])
                                 if (len(command_buffer) == 2):
                                     at = command_buffer[0] << 8 | command_buffer[1]
-                                    self.subinterfaces[self.selected_index].r_lt_alock = at/100.0
-                                    RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting long-term airtime limit is "+str(self.subinterfaces[self.selected_index].r_lt_alock)+"%", RNS.LOG_DEBUG)
+                                    if self.subinterfaces[self.selected_index] is not int:
+                                        self.subinterfaces[self.selected_index].r_lt_alock = at/100.0
+                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting long-term airtime limit is "+str(self.subinterfaces[self.selected_index].r_lt_alock)+"%", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_STAT_CHTM):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -756,15 +768,16 @@ class RNodeMultiInterface(Interface):
                                     prt = command_buffer[6] << 8 | command_buffer[7]
                                     cst = command_buffer[8] << 8 | command_buffer[9]
 
-                                    if lst != self.subinterfaces[self.selected_index].r_symbol_time_ms or lsr != self.subinterfaces[self.selected_index].r_symbol_rate or prs != self.subinterfaces[self.selected_index].r_preamble_symbols or prt != self.subinterfaces[self.selected_index].r_premable_time_ms or cst != self.subinterfaces[self.selected_index].r_csma_slot_time_ms:
-                                        self.subinterfaces[self.selected_index].r_symbol_time_ms    = lst
-                                        self.subinterfaces[self.selected_index].r_symbol_rate       = lsr
-                                        self.subinterfaces[self.selected_index].r_preamble_symbols  = prs
-                                        self.subinterfaces[self.selected_index].r_premable_time_ms  = prt
-                                        self.subinterfaces[self.selected_index].r_csma_slot_time_ms = cst
-                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting symbol time is "+str(round(self.subinterfaces[self.selected_index].r_symbol_time_ms,2))+"ms (at "+str(self.subinterfaces[self.selected_index].r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
-                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting preamble is "+str(self.subinterfaces[self.selected_index].r_preamble_symbols)+" symbols ("+str(self.subinterfaces[self.selected_index].r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
-                                        RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting CSMA slot time is "+str(self.subinterfaces[self.selected_index].r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
+                                    if self.subinterfaces[self.selected_index] is not int:
+                                        if lst != self.subinterfaces[self.selected_index].r_symbol_time_ms or lsr != self.subinterfaces[self.selected_index].r_symbol_rate or prs != self.subinterfaces[self.selected_index].r_preamble_symbols or prt != self.subinterfaces[self.selected_index].r_premable_time_ms or cst != self.subinterfaces[self.selected_index].r_csma_slot_time_ms:
+                                            self.subinterfaces[self.selected_index].r_symbol_time_ms    = lst
+                                            self.subinterfaces[self.selected_index].r_symbol_rate       = lsr
+                                            self.subinterfaces[self.selected_index].r_preamble_symbols  = prs
+                                            self.subinterfaces[self.selected_index].r_premable_time_ms  = prt
+                                            self.subinterfaces[self.selected_index].r_csma_slot_time_ms = cst
+                                            RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting symbol time is "+str(round(self.subinterfaces[self.selected_index].r_symbol_time_ms,2))+"ms (at "+str(self.subinterfaces[self.selected_index].r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
+                                            RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting preamble is "+str(self.subinterfaces[self.selected_index].r_preamble_symbols)+" symbols ("+str(self.subinterfaces[self.selected_index].r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
+                                            RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting CSMA slot time is "+str(self.subinterfaces[self.selected_index].r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_RANDOM):
                             self.r_random = byte
                         elif (command == KISS.CMD_PLATFORM):
@@ -817,7 +830,8 @@ class RNodeMultiInterface(Interface):
                                 for interface in self.subinterfaces:
                                     if interface != 0 and interface.online:
                                         interface_available = True
-                                        self.subinterfaces[interface.index].processOutgoing(self.id_callsign)
+                                        if self.subinterfaces[interface.index] is not int:
+                                            self.subinterfaces[interface.index].processOutgoing(self.id_callsign)
 
                                 if interface_available:
                                     RNS.log("Interface "+str(self)+" is transmitting beacon data on all subinterfaces: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
