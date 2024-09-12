@@ -190,7 +190,7 @@ class RNodeInterface(Interface):
             RNS.log("Invalid frequency configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
-        if (self.txpower < 0 or self.txpower > 22):
+        if (self.txpower < -9 or self.txpower > 27):
             RNS.log("Invalid TX power configured for "+str(self), RNS.LOG_ERROR)
             self.validcfg = False
 
@@ -395,7 +395,7 @@ class RNodeInterface(Interface):
             raise IOError("An IO error occurred while configuring bandwidth for "+str(self))
 
     def setTXPower(self):
-        txp = bytes([self.txpower])
+        txp = self.txpower.to_bytes(signed=True)
         kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
@@ -608,7 +608,8 @@ class RNodeInterface(Interface):
                                     self.updateBitrate()
 
                         elif (command == KISS.CMD_TXPOWER):
-                            self.r_txpower = byte
+                            txp = byte - 256 if byte > 127 else byte
+                            self.r_txpower = txp
                             RNS.log(str(self)+" Radio reporting TX power is "+str(self.r_txpower)+" dBm", RNS.LOG_DEBUG)
                         elif (command == KISS.CMD_SF):
                             self.r_sf = byte

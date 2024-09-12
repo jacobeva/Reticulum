@@ -15,11 +15,11 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 if pure_python:
-    pkg_name = "rnspure"
+    pkg_name = "rnspure-libsys"
     requirements = []
     long_description = long_description.replace("</p>", "</p>"+pure_notice)
 else:
-    pkg_name = "rns"
+    pkg_name = "rns-libsys"
     requirements = ['cryptography>=3.4.7', 'pyserial>=3.5']
 
 excluded_modules = exclude=["tests.*", "tests"]

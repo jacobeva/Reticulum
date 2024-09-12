@@ -30,6 +30,7 @@ if get_platform() == "android":
     from .Interfaces import UDPInterface
     from .Interfaces import I2PInterface
     from .Interfaces.Android import RNodeInterface
+    from .Interfaces.Android import RNodeMultiInterface
     from .Interfaces.Android import SerialInterface
     from .Interfaces.Android import KISSInterface
 else:
@@ -1035,7 +1036,6 @@ class Reticulum:
                                         interface.ifac_size = ifac_size
                                     else:
                                         interface.ifac_size = 8
-
 
                                 if interface != None:
                                     interface.announce_rate_target = announce_rate_target
