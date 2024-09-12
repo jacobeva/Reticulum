@@ -707,6 +707,10 @@ class RNodeMultiInterface(Interface):
 
         RNS.log("Creating subinterfaces...", RNS.LOG_VERBOSE)
 
+        # \todo needs to be fixed upstream in Reticulum, does not use highest
+        # data rate interface by default when announcing, so we have to add
+        # the interfaces in reverse order for now, which should usually be in
+        # order of data rate (but it's possible it may not be)
         for subint in reversed(self.subint_config):
             subint_vport = int(subint[1])
             # check if index of vport exists in interface types array (the index corresponds to the vport for that interface)
