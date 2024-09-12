@@ -1,8 +1,7 @@
 ##########################################################
 # This RNS example demonstrates a simple client/server   #
-# echo utility. A client can send an echo request to the #
-# server, and the server will respond by proving receipt #
-# of the packet.                                         #
+# echo utility that uses ratchets to rotate encryption   #
+# keys everytime an announce is sent.                    #
 ##########################################################
 
 import argparse
@@ -26,6 +25,9 @@ def server(configpath):
 
     # We must first initialise Reticulum
     reticulum = RNS.Reticulum(configpath)
+
+    # TODO: Remove
+    RNS.loglevel = RNS.LOG_DEBUG
     
     # Randomly create a new identity for our echo server
     server_identity = RNS.Identity()
@@ -41,9 +43,18 @@ def server(configpath):
         RNS.Destination.IN,
         RNS.Destination.SINGLE,
         APP_NAME,
+        "ratchet",
         "echo",
         "request"
     )
+
+    # Enable ratchets on the destination by providing a file
+    # path to store ratchets. In this example, we will just
+    # use a temporary file, but in real-world applications,
+    # it's extremely important to keep this file secure, since
+    # it contains encryption keys for the destination.
+    destination_hexhash = RNS.hexrep(echo_destination.hash, delimit=False)
+    echo_destination.enable_ratchets(f"/tmp/{destination_hexhash}.ratchets")
 
     # We configure the destination to automatically prove all
     # packets addressed to it. By doing this, RNS will automatically
@@ -64,7 +75,7 @@ def server(configpath):
 def announceLoop(destination):
     # Let the user know that everything is ready
     RNS.log(
-        "Echo server "+
+        "Ratcheted echo server "+
         RNS.prettyhexrep(destination.hash)+
         " running, hit enter to manually send an announce (Ctrl-C to quit)"
     )
@@ -169,7 +180,7 @@ def client(destination_hexhash, configpath, timeout=None):
             # We got the correct identity instance from the
             # recall method, so let's create an outgoing
             # destination. We use the naming convention:
-            # example_utilities.echo.request
+            # example_utilities.ratchet.echo.request
             # This matches the naming we specified in the
             # server part of the code.
             request_destination = RNS.Destination(
@@ -177,6 +188,7 @@ def client(destination_hexhash, configpath, timeout=None):
                 RNS.Destination.OUT,
                 RNS.Destination.SINGLE,
                 APP_NAME,
+                "ratchet",
                 "echo",
                 "request"
             )
@@ -268,7 +280,7 @@ def packet_timed_out(receipt):
 # the desired program mode.
 if __name__ == "__main__":
     try:
-        parser = argparse.ArgumentParser(description="Simple echo server and client utility")
+        parser = argparse.ArgumentParser(description="Simple ratcheted echo server and client utility")
 
         parser.add_argument(
             "-s",

@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2024 Mark Qvist / unsigned.io and contributors.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -52,16 +52,16 @@ class Transport:
     Maximum amount of hops that Reticulum will transport a packet.
     """
     
-    PATHFINDER_R                = 1          # Retransmit retries
-    PATHFINDER_G                = 5          # Retry grace period
-    PATHFINDER_RW               = 0.5        # Random window for announce rebroadcast
-    PATHFINDER_E                = 60*60*24*7 # Path expiration of one week
-    AP_PATH_TIME                = 60*60*24   # Path expiration of one day for Access Point paths
-    ROAMING_PATH_TIME           = 60*60*6    # Path expiration of 6 hours for Roaming paths
+    PATHFINDER_R                = 1            # Retransmit retries
+    PATHFINDER_G                = 5            # Retry grace period
+    PATHFINDER_RW               = 0.5          # Random window for announce rebroadcast
+    PATHFINDER_E                = 60*60*24*7   # Path expiration of one week
+    AP_PATH_TIME                = 60*60*24     # Path expiration of one day for Access Point paths
+    ROAMING_PATH_TIME           = 60*60*6      # Path expiration of 6 hours for Roaming paths
 
     # TODO: Calculate an optimal number for this in
     # various situations
-    LOCAL_REBROADCASTS_MAX      = 2          # How many local rebroadcasts of an announce is allowed
+    LOCAL_REBROADCASTS_MAX      = 2            # How many local rebroadcasts of an announce is allowed
 
     PATH_REQUEST_TIMEOUT        = 15           # Default timuout for client path requests in seconds
     PATH_REQUEST_GRACE          = 0.4          # Grace time before a path announcement is made, allows directly reachable peers to respond first
@@ -403,7 +403,8 @@ class Transport:
                                     header_type = RNS.Packet.HEADER_2,
                                     transport_type = Transport.TRANSPORT,
                                     transport_id = Transport.identity.hash,
-                                    attached_interface = attached_interface
+                                    attached_interface = attached_interface,
+                                    context_flag = packet.context_flag,
                                 )
 
                                 new_packet.hops = announce_entry[4]
@@ -1603,7 +1604,8 @@ class Transport:
                                                 header_type = RNS.Packet.HEADER_2,
                                                 transport_type = Transport.TRANSPORT,
                                                 transport_id = Transport.identity.hash,
-                                                attached_interface = local_interface
+                                                attached_interface = local_interface,
+                                                context_flag = packet.context_flag,
                                             )
                                             
                                             new_announce.hops = packet.hops
@@ -1620,7 +1622,8 @@ class Transport:
                                                 header_type = RNS.Packet.HEADER_2,
                                                 transport_type = Transport.TRANSPORT,
                                                 transport_id = Transport.identity.hash,
-                                                attached_interface = local_interface
+                                                attached_interface = local_interface,
+                                                context_flag = packet.context_flag,
                                             )
 
                                             new_announce.hops = packet.hops
@@ -1651,7 +1654,8 @@ class Transport:
                                     header_type = RNS.Packet.HEADER_2,
                                     transport_type = Transport.TRANSPORT,
                                     transport_id = Transport.identity.hash,
-                                    attached_interface = attached_interface
+                                    attached_interface = attached_interface,
+                                    context_flag = packet.context_flag,
                                 )
 
                                 new_announce.hops = packet.hops
@@ -1673,30 +1677,39 @@ class Transport:
 
                             # Call externally registered callbacks from apps
                             # wanting to know when an announce arrives
-                            if packet.context != RNS.Packet.PATH_RESPONSE:
-                                for handler in Transport.announce_handlers:
-                                    try:
-                                        # Check that the announced destination matches
-                                        # the handlers aspect filter
-                                        execute_callback = False
-                                        announce_identity = RNS.Identity.recall(packet.destination_hash)
-                                        if handler.aspect_filter == None:
-                                            # If the handlers aspect filter is set to
-                                            # None, we execute the callback in all cases
+                            for handler in Transport.announce_handlers:
+                                try:
+                                    # Check that the announced destination matches
+                                    # the handlers aspect filter
+                                    execute_callback = False
+                                    announce_identity = RNS.Identity.recall(packet.destination_hash)
+                                    if handler.aspect_filter == None:
+                                        # If the handlers aspect filter is set to
+                                        # None, we execute the callback in all cases
+                                        execute_callback = True
+                                    else:
+                                        handler_expected_hash = RNS.Destination.hash_from_name_and_identity(handler.aspect_filter, announce_identity)
+                                        if packet.destination_hash == handler_expected_hash:
                                             execute_callback = True
+
+                                    # If this is a path response, check whether the
+                                    # handler wants to receive it.
+                                    if packet.context == RNS.Packet.PATH_RESPONSE:
+                                        if hasattr(handler, "receive_path_responses") and handler.receive_path_responses == True:
+                                            pass
                                         else:
-                                            handler_expected_hash = RNS.Destination.hash_from_name_and_identity(handler.aspect_filter, announce_identity)
-                                            if packet.destination_hash == handler_expected_hash:
-                                                execute_callback = True
-                                        if execute_callback:
-                                            handler.received_announce(
-                                                destination_hash=packet.destination_hash,
-                                                announced_identity=announce_identity,
-                                                app_data=RNS.Identity.recall_app_data(packet.destination_hash)
-                                            )
-                                    except Exception as e:
-                                        RNS.log("Error while processing external announce callback.", RNS.LOG_ERROR)
-                                        RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
+                                            execute_callback = False
+
+                                    if execute_callback:
+                                        handler.received_announce(
+                                            destination_hash=packet.destination_hash,
+                                            announced_identity=announce_identity,
+                                            app_data=RNS.Identity.recall_app_data(packet.destination_hash)
+                                        )
+                                except Exception as e:
+                                    RNS.log("Error while processing external announce callback.", RNS.LOG_ERROR)
+                                    RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
+                                    RNS.trace_exception(e)
 
             # Handling for link requests to local destinations
             elif packet.packet_type == RNS.Packet.LINKREQUEST:
@@ -1975,7 +1988,9 @@ class Transport:
         """
         Registers an announce handler.
 
-        :param handler: Must be an object with an *aspect_filter* attribute and a *received_announce(destination_hash, announced_identity, app_data)* callable. See the :ref:`Announce Example<example-announce>` for more info.
+        :param handler: Must be an object with an *aspect_filter* attribute and a *received_announce(destination_hash, announced_identity, app_data)*
+                        callable. Can optionally have a *receive_path_responses* attribute set to ``True``, to also receive all path responses, in addition to live
+                        announces. See the :ref:`Announce Example<example-announce>` for more info.
         """
         if hasattr(handler, "received_announce") and callable(handler.received_announce):
             if hasattr(handler, "aspect_filter"):

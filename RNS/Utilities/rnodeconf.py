@@ -176,6 +176,10 @@ class ROM():
     MODEL_E9       = 0xE9
     MODEL_E3       = 0xE3
     MODEL_E8       = 0xE8
+
+    PRODUCT_TECHO  = 0x15
+    MODEL_T4       = 0x16
+    MODEL_T9       = 0x17
     
     PRODUCT_HMBRW  = 0xF0
     MODEL_FF       = 0xFF
@@ -206,6 +210,7 @@ class ROM():
     BOARD_GENERIC_ESP32 = 0x35
     BOARD_LORA32_V2_0   = 0x36
     BOARD_LORA32_V2_1   = 0x37
+    BOARD_TECHO         = 0x43
     BOARD_RAK4631       = 0x51
 
     MANUAL_FLASH_MODELS = [MODEL_A1, MODEL_A6]
@@ -220,6 +225,7 @@ products = {
     ROM.PRODUCT_T32_21: "LilyGO LoRa32 v2.1",
     ROM.PRODUCT_H32_V2: "Heltec LoRa32 v2",
     ROM.PRODUCT_H32_V3: "Heltec LoRa32 v3",
+    ROM.PRODUCT_TECHO:  "LilyGO T-Echo",
     ROM.PRODUCT_RAK4631: "RAK4631",
     ROM.PRODUCT_FREENODE: "freeNode",
 }
@@ -265,6 +271,10 @@ models = {
     0xE9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_tbeam.zip", "SX1276"],
     0xE3: [420000000, 520000000, 22, "420 - 520 MHz", "rnode_firmware_tbeam_sx1262.zip", "SX1268"],
     0xE8: [850000000, 950000000, 22, "850 - 950 MHz", "rnode_firmware_tbeam_sx1262.zip", "SX1262"],
+    0x11: [430000000, 510000000, 22, "430 - 510 MHz", "rnode_firmware_rak4631.zip", "SX1262"],
+    0x12: [779000000, 928000000, 22, "779 - 928 MHz", "rnode_firmware_rak4631.zip", "SX1262"],
+    0x16: [779000000, 928000000, 22, "430 - 510 Mhz", "rnode_firmware_techo.zip", "SX1262"],
+    0x17: [779000000, 928000000, 22, "779 - 928 Mhz", "rnode_firmware_techo.zip", "SX1262"],
     0xFE: [100000000, 1100000000, 17, "(Band capabilities unknown)", None, "Unknown"],
     0xFF: [100000000, 1100000000, 14, "(Band capabilities unknown)", None, "Unknown"],
 }
@@ -1620,6 +1630,7 @@ def main():
             print("[8] Heltec LoRa32 v3")
             print("[9] LilyGO LoRa T3S3")
             print("[10] RAK4631")
+            print("[11] LilyGo T-Echo")
             print("       .")
             print("      / \\   Select one of these options if you want to easily turn")
             print("       |    a supported development board into an RNode.")
@@ -1631,7 +1642,7 @@ def main():
             try:
                 c_dev = int(input())
                 c_mod = False
-                if c_dev < 1 or c_dev > 10:
+                if c_dev < 1 or c_dev > 11:
                     raise ValueError()
                 elif c_dev == 1:
                     selected_product = ROM.PRODUCT_RNODE
@@ -1768,6 +1779,19 @@ def main():
                     print("                     RAK4631 RNode Installer")
                     print("")
                     print("Important! Using RNode firmware on RAKwireless devices should currently be")
+                    print("considered experimental. It is not intended for production or critical use.")
+                    print("The currently supplied firmware is provided AS-IS as a courtesey to those")
+                    print("who would like to experiment with it. Hit enter to continue.")
+                    print("---------------------------------------------------------------------------")
+                    input()
+                elif c_dev == 11:
+                    selected_product = ROM.PRODUCT_TECHO
+                    clear()
+                    print("")
+                    print("---------------------------------------------------------------------------")
+                    print("                     LilyGo T-Echo RNode Installer")
+                    print("")
+                    print("Important! Using RNode firmware on LilyGo T-Echo devices should currently be")
                     print("considered experimental. It is not intended for production or critical use.")
                     print("The currently supplied firmware is provided AS-IS as a courtesey to those")
                     print("who would like to experiment with it. Hit enter to continue.")
@@ -2055,6 +2079,27 @@ def main():
                         selected_platform = ROM.PLATFORM_NRF52
                     elif c_model > 1:
                         selected_model = ROM.MODEL_12
+                        selected_platform = ROM.PLATFORM_NRF52
+                except Exception as e:
+                    print("That band does not exist, exiting now.")
+                    graceful_exit()
+            elif selected_product == ROM.PRODUCT_TECHO:
+                selected_mcu = ROM.MCU_NRF52
+                print("\nWhat band is this T-Echo for?\n")
+                print("[1] 433 MHz")
+                print("[2] 868 MHz")
+                print("[3] 915 MHz")
+                print("[4] 923 MHz")
+                print("\n? ", end="")
+                try:
+                    c_model = int(input())
+                    if c_model < 1 or c_model > 1:
+                        raise ValueError()
+                    elif c_model == 1:
+                        selected_model = ROM.MODEL_T4
+                        selected_platform = ROM.PLATFORM_NRF52
+                    elif c_model > 1:
+                        selected_model = ROM.MODEL_T9
                         selected_platform = ROM.PLATFORM_NRF52
                 except Exception as e:
                     print("That band does not exist, exiting now.")

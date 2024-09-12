@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2024 Mark Qvist / unsigned.io and contributors.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -142,6 +142,7 @@ class Link:
             raise TypeError("Links can only be established to the \"single\" destination type")
         self.rtt = None
         self.establishment_cost = 0
+        self.establishment_rate = None
         self.callbacks = LinkCallbacks()
         self.resource_strategy = Link.ACCEPT_NONE
         self.outgoing_resources = []
@@ -774,6 +775,7 @@ class Link:
                     should_query = False
                     if packet.context == RNS.Packet.NONE:
                         plaintext = self.decrypt(packet.data)
+                        packet.ratchet_id = self.link_id
                         if plaintext != None:
                             if self.callbacks.packet != None:
                                 thread = threading.Thread(target=self.callbacks.packet, args=(plaintext, packet))

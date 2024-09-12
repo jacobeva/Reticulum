@@ -1,4 +1,4 @@
-Reticulum Network Stack β <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Installs"/>
+Reticulum Network Stack β <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Installs" style="padding-left:10px"/><a href="https://github.com/markqvist/reticulum/actions/workflows/python-app.yml"><img align="right" src="https://github.com/markqvist/reticulum/actions/workflows/python-app.yml/badge.svg"/></a>
 ==========
 
 <p align="center"><img width="200" src="https://raw.githubusercontent.com/markqvist/Reticulum/master/docs/source/graphics/rns_logo_512.png"></p>
@@ -306,9 +306,11 @@ general-purpose CPUs and on microcontrollers. The necessary primitives are:
 - X22519 for ECDH key exchanges
 - HKDF for key derivation
 - Modified Fernet for encrypted tokens
-  - AES-128 in CBC mode
-  - HMAC for message authentication
-  - No Fernet version and timestamp fields
+  - Ephemeral keys derived from an ECDH key exchange on Curve25519
+  - AES-128 in CBC mode with PKCS7 padding
+  - HMAC using SHA256 for message authentication
+  - IVs are generated through os.urandom()
+  - No Fernet version and timestamp metadata fields
 - SHA-256
 - SHA-512
 
