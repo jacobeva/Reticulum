@@ -732,6 +732,10 @@ class RNodeMultiInterface(Interface):
                         lt_alock=subint[9]
                 )
 
+                if not interface.online:
+                    self.online = False
+                    raise IOError(str(interface) + " failed to initialise.")
+
                 interface.OUT = True
                 interface.IN  = self.IN
                 
@@ -739,6 +743,7 @@ class RNodeMultiInterface(Interface):
                 interface.mode = self.mode
                 interface.HW_MTU = self.HW_MTU
                 interface.detected = True
+
                 RNS.Transport.interfaces.append(interface)
                 RNS.log("Spawned new RNode subinterface: "+str(interface), RNS.LOG_VERBOSE)
 
