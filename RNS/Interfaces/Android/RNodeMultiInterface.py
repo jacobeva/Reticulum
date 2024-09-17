@@ -322,7 +322,7 @@ class AndroidBluetoothManager():
                     potential_devices.append(device)
 
             else:
-                if device.getName().lower().startswith("rnode "):
+                if device.getName().lower().startswith("opencom "):
                     potential_devices.append(device)
 
         return potential_devices
