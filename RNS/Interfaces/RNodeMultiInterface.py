@@ -249,6 +249,7 @@ class RNodeMultiInterface(Interface):
         if (not self.validcfg):
             raise ValueError("The configuration for "+str(self)+" contains errors, interface is offline")
 
+    def start(self):
         try:
             self.open_port()
 
@@ -327,11 +328,8 @@ class RNodeMultiInterface(Interface):
                     self.online = False
                     raise IOError(str(interface) + " failed to initialise.")
 
-                interface.OUT = self.OUT
-                interface.IN  = self.IN
-                
-                interface.announce_rate_target = self.announce_rate_target
-                interface.mode = self.mode
+                interface.OUT = subint[10]
+                interface.IN  = True
                 interface.HW_MTU = self.HW_MTU
                 interface.detected = True
                 RNS.Transport.interfaces.append(interface)
@@ -1024,8 +1022,14 @@ class RNodeSubInterface(Interface):
         self.parent_interface = parent_interface
         self.announce_rate_target = None
 
+        self.mode = None
+        self.announce_cap = None
+        self.bitrate = None
+        self.ifac_size = None
+
         # add this interface to the subinterfaces array
         self.parent_interface.subinterfaces[index] = self
+
 
         self.validcfg  = True
         if (self.interface_type == "SX126X" or self.interface_type == "SX127X"):
