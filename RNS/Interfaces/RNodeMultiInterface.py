@@ -330,8 +330,12 @@ class RNodeMultiInterface(Interface):
 
                 interface.OUT = subint[10]
                 interface.IN  = True
+
+                interface.announce_rate_target = self.announce_rate_target
+                interface.mode = self.mode
                 interface.HW_MTU = self.HW_MTU
                 interface.detected = True
+
                 RNS.Transport.interfaces.append(interface)
                 RNS.log("Spawned new RNode subinterface: "+str(interface), RNS.LOG_VERBOSE)
 
