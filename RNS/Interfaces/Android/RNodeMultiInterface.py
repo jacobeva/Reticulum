@@ -1837,7 +1837,7 @@ class BLEConnection(BluetoothDispatcher):
         if not found_device:
             for device in potential_devices:
                 if (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_LE) or (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
-                    if device.getName().startswith("RNode "):
+                    if device.getName().startswith("openCom XL "):
                         found_device = device
                         break
 
