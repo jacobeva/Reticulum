@@ -21,8 +21,6 @@
 # SOFTWARE.
 
 from RNS.Interfaces.Interface import Interface
-from able import BluetoothDispatcher, GATT_SUCCESS
-from able.adapter import require_bluetooth_enabled
 
 from time import sleep
 import sys
@@ -30,6 +28,15 @@ import threading
 import time
 import math
 import RNS
+
+try:
+    from able import BluetoothDispatcher, GATT_SUCCESS
+except Exception as e:
+    GATT_SUCCESS = 0x00
+    class BluetoothDispatcher():
+        def __init__(**kwargs):
+            RNS.log("Attempt to initialise BLE connectivity, but Android BLE support library is unavailable", RNS.LOG_ERROR)
+            raise OSError("No BLE support available")
 
 class KISS():
     FEND            = 0xC0
@@ -164,132 +171,24 @@ class KISS():
         data = data.replace(bytes([0xc0]), bytes([0xdb, 0xdc]))
         return data
 
-class AndroidBLEDispatcher(BluetoothDispatcher):
-    NORDIC_UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-    NORDIC_UART_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
-    NORDIC_UART_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
-
-    CONNECT_TIMEOUT = 30
-
-    def __init__(self):
-
-        super(AndroidBLEDispatcher, self).__init__()
-
-        self.device = None
-        self.rx_char = None
-        self.tx_char = None
-        self.data = None
-        self.connected = False
-
-    @require_bluetooth_enabled
-    def connect(self, device):
-        self.device = device
-        self.connect_gatt(self.device)
-
-    def wait_connected(self):
-        end = time.time() + AndroidBLEDispatcher.CONNECT_TIMEOUT
-
-        while time.time() < end:
-            if self.connected:
-                return True
-            time.sleep(1)
-
-        return False
-
-    def close(self):
-        self.connected = False
-
-        if self.tx_char is not None:
-            try:
-                self.enable_notifications(self.tx_char, enable=False)
-            except:
-                pass
-        self.close_gatt()
-
-    def on_connection_state_change(self, status, state):
-        if status == GATT_SUCCESS and state:  # connection established
-            RNS.log("Connected to RNode over BLE!", RNS.LOG_DEBUG)
-            time.sleep(1)
-            self.discover_services()
-        else:  # disconnection or error
-            self.connected = False
-            RNS.log("Could not connect to RNode over BLE!", RNS.LOG_DEBUG)
-            self.close_gatt()  # close current connection
-
-    def on_services(self, status, services):
-        self.request_mtu(517)  # max possible MTU
-        time.sleep(0.5)
-
-        self.rx_char = services.search(AndroidBLEDispatcher.NORDIC_UART_RX_UUID)
-        if self.rx_char is not None:
-            RNS.log("Found BLE RX characteristic!", RNS.LOG_EXTREME)
-
-            self.tx_char = services.search(AndroidBLEDispatcher.NORDIC_UART_TX_UUID)
-            if self.tx_char is not None:
-                RNS.log("Found BLE TX characteristic!", RNS.LOG_EXTREME)
-
-                if self.enable_notifications(self.tx_char):
-                    RNS.log("Enabled notifications for BLE TX characteristic!", RNS.LOG_EXTREME)
-                    self.connected = True
-
-    def on_mtu_changed(self, mtu, status):
-        # check if MTU is now higher than the default
-        if status == GATT_SUCCESS and mtu > 23:
-            RNS.log("BLE MTU set!", RNS.LOG_EXTREME)
-        else:
-            RNS.log("BLE MTU not set, error!", RNS.LOG_EXTREME)
-
-    def on_characteristic_changed(self, characteristic):
-        if characteristic.getUuid().toString() == AndroidBLEDispatcher.NORDIC_UART_TX_UUID:
-            RNS.log("Received TX characteristic notify!", RNS.LOG_EXTREME)
-            if self.data is None:
-                self.data = bytearray(characteristic.getValue())
-            else:
-                self.data.extend(bytearray(characteristic.getValue()))
-
-    def available(self):
-        if self.data is not None:
-            return True
-        else:
-            return False
-
-    def read(self):
-        if self.data is not None:
-            data = self.data
-            # Remove data as it has now been read
-            self.data = None
-            return data
-
-    def write(self, data):
-        if self.rx_char is not None:
-            self.write_characteristic(self.rx_char, data)
-
 
 class AndroidBluetoothManager():
     DEVICE_TYPE_CLASSIC = 1
     DEVICE_TYPE_LE = 2
     DEVICE_TYPE_DUAL = 3
 
-    def __init__(self, owner, ble_dispatcher = None, target_device_name = None, target_device_address = None):
-        from jnius import autoclass, cast
-
+    def __init__(self, owner, target_device_name = None, target_device_address = None):
+        from jnius import autoclass
         self.owner = owner
         self.connected = False
         self.target_device_name = target_device_name
         self.target_device_address = target_device_address
         self.potential_remote_devices = []
         self.rfcomm_socket = None
-        self.rfcomm_reader = None
         self.connected_device = None
         self.connection_failed = False
         self.bt_adapter = autoclass('android.bluetooth.BluetoothAdapter')
         self.bt_device  = autoclass('android.bluetooth.BluetoothDevice')
-        self.bt_device_type = None
-
-        # BLE
-        self.ble = ble_dispatcher
-
-        # Bluetooth Legacy
         self.bt_socket  = autoclass('android.bluetooth.BluetoothSocket')
         self.bt_rfcomm_service_record = autoclass('java.util.UUID').fromString("00001101-0000-1000-8000-00805F9B34FB")
         self.buffered_input_stream    = autoclass('java.io.BufferedInputStream')
@@ -323,7 +222,7 @@ class AndroidBluetoothManager():
                     potential_devices.append(device)
 
             else:
-                if device.getName().lower().startswith("opencom "):
+                if device.getName().lower().startswith("rnode "):
                     potential_devices.append(device)
 
         return potential_devices
@@ -340,66 +239,37 @@ class AndroidBluetoothManager():
             while not self.connected and len(self.potential_remote_devices) > 0:
                 device = self.potential_remote_devices.pop()
                 try:
-                    self.bt_device_type = device.getType()
-                    if self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
-                        try:
-                            self.rfcomm_socket = device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
-                            if self.rfcomm_socket == None:
-                                raise IOError("Bluetooth stack returned no socket object")
-                            else:
-                                if not self.rfcomm_socket.isConnected():
-                                    try:
-                                        self.rfcomm_socket.connect()
-                                        self.rfcomm_reader = self.buffered_input_stream(self.rfcomm_socket.getInputStream(), 1024)
-                                        self.rfcomm_writer = self.rfcomm_socket.getOutputStream()
-                                        self.connected = True
-                                        self.connected_device = device
-                                        RNS.log("Bluetooth device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
-                                    except Exception as e:
-                                        raise IOError("The Bluetooth RFcomm socket could not be connected: "+str(e))
-
-                        except Exception as e:
-                            RNS.log("Could not create and connect Bluetooth RFcomm socket for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
-                            RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
-
-                            if self.ble is not None:
-                                # This may seem like a strange decision on paper, but sometimes Android returns the device type incorrectly on certain API versions. See here:
-                                # https://stackoverflow.com/questions/25261171/android-bluetooth-discovery-device-type
-                                RNS.log("BLE adapter is available, attempting to connect to "+str(device.getName())+" using BLE instead.", RNS.LOG_EXTREME)
-                                self.bt_device_type = AndroidBluetoothManager.DEVICE_TYPE_LE
-
-                    # Prefer to connect to devices with capabilities of both BLE and BT Legacy using BLE
-                    if ((self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE) or (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL)) and self.ble is not None:
-                        try:
-                            self.ble.connect(device)
-                            if self.ble.wait_connected():
+                    self.rfcomm_socket = device.createRfcommSocketToServiceRecord(self.bt_rfcomm_service_record)
+                    if self.rfcomm_socket == None:
+                        raise IOError("Bluetooth stack returned no socket object")
+                    else:
+                        if not self.rfcomm_socket.isConnected():
+                            try:
+                                self.rfcomm_socket.connect()
+                                self.rfcomm_reader = self.buffered_input_stream(self.rfcomm_socket.getInputStream(), 1024)
+                                self.rfcomm_writer = self.rfcomm_socket.getOutputStream()
                                 self.connected = True
                                 self.connected_device = device
-                                RNS.log("Bluetooth (LE) device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
-                        except Exception as e:
-                            RNS.log("Could not connect to BLE endpoint for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
-                            RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
-
+                                RNS.log("Bluetooth device "+str(self.connected_device.getName())+" "+str(self.connected_device.getAddress())+" connected.")
+                            except Exception as e:
+                                raise IOError("The Bluetooth RFcomm socket could not be connected: "+str(e))
 
                 except Exception as e:
-                    RNS.log("Could not determine type of Bluetooth device for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
+                    RNS.log("Could not create and connect Bluetooth RFcomm socket for "+str(device.getName())+" "+str(device.getAddress()), RNS.LOG_EXTREME)
                     RNS.log("The contained exception was: "+str(e), RNS.LOG_EXTREME)
 
     def close(self):
         if self.connected:
-            if self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
-                if self.rfcomm_reader != None:
-                    self.rfcomm_reader.close()
-                    self.rfcomm_reader = None
-                
-                if self.rfcomm_writer != None:
-                    self.rfcomm_writer.close()
-                    self.rfcomm_writer = None
+            if self.rfcomm_reader != None:
+                self.rfcomm_reader.close()
+                self.rfcomm_reader = None
+            
+            if self.rfcomm_writer != None:
+                self.rfcomm_writer.close()
+                self.rfcomm_writer = None
 
-                if self.rfcomm_socket != None:
-                    self.rfcomm_socket.close()
-            elif self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE or self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL:
-                self.ble.close()
+            if self.rfcomm_socket != None:
+                self.rfcomm_socket.close()
 
             self.connected = False
             self.connected_device = None
@@ -410,7 +280,7 @@ class AndroidBluetoothManager():
         if self.connection_failed:
             raise IOError("Bluetooth connection failed")
         else:
-            if self.connected and self.rfcomm_reader != None and self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
+            if self.connected and self.rfcomm_reader != None:
                 available = self.rfcomm_reader.available()
                 if available > 0:
                     if hasattr(self.rfcomm_reader, "readNBytes"):
@@ -421,34 +291,18 @@ class AndroidBluetoothManager():
                         return rb
                 else:
                     return bytes([])
-            elif self.connected and (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE or self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
-                available = self.ble.available()
-
-                if available:
-                    return self.ble.read()
-                else:
-                    return bytes([])
             else:
-                raise IOError("No RFcomm socket available or BLE device disconnected")
+                raise IOError("No RFcomm socket available")
 
     def write(self, data):
-        if self.connected and self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_CLASSIC:
-            try:
-                self.rfcomm_writer.write(data)
-                self.rfcomm_writer.flush()
-                return len(data)
-            except Exception as e:
-                RNS.log("Bluetooth connection failed for "+str(self), RNS.LOG_ERROR)
-                self.connection_failed = True
-                return 0
-        elif self.connected and (self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_LE or self.bt_device_type == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
-            try:
-                self.ble.write(data)
-                return len(data)
-            except Exception as e:
-                RNS.log("BLE connection failed for "+str(self), RNS.LOG_ERROR)
-                self.connection_failed = True
-                return 0
+        try:
+            self.rfcomm_writer.write(data)
+            self.rfcomm_writer.flush()
+            return len(data)
+        except Exception as e:
+            RNS.log("Bluetooth connection failed for "+str(self), RNS.LOG_ERROR)
+            self.connection_failed = True
+            return 0
 
 class RNodeMultiInterface(Interface):
     MAX_CHUNK = 32768
@@ -469,7 +323,91 @@ class RNodeMultiInterface(Interface):
     BATTERY_STATE_CHARGING    = 0x02
     BATTERY_STATE_CHARGED     = 0x03
 
-    def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, ble_dispatcher = None, allow_bluetooth = False, target_device_name = None, target_device_address = None):
+    @classmethod
+    def bluetooth_control(device_serial = None, port = None, enable_bluetooth = False, disable_bluetooth = False, pairing_mode = False):
+        if (port != None or device_serial != None) and (enable_bluetooth or disable_bluetooth or pairing_mode):
+            serial = None
+            bluetooth_state = None
+            if pairing_mode:
+                bluetooth_state = 0x01
+            elif enable_bluetooth:
+                bluetooth_state = 0x01
+            elif disable_bluetooth:
+                bluetooth_state = 0x00
+
+            if port != None:
+                RNS.log("Opening serial port "+port+"...")
+                # Get device parameters
+                from usb4a import usb
+                device = usb.get_usb_device(port)
+                if device:
+                    vid = device.getVendorId()
+                    pid = device.getProductId()
+
+                    # Driver overrides for speficic chips
+                    from usbserial4a import serial4a as pyserial
+                    proxy = pyserial.get_serial_port
+                    if vid == 0x1A86 and pid == 0x55D4:
+                        # Force CDC driver for Qinheng CH34x
+                        RNS.log("Using CDC driver for "+RNS.hexrep(vid)+":"+RNS.hexrep(pid), RNS.LOG_DEBUG)
+                        from usbserial4a.cdcacmserial4a import CdcAcmSerial
+                        proxy = CdcAcmSerial
+
+                    serial = proxy(
+                        port,
+                        baudrate = 115200,
+                        bytesize = 8,
+                        parity = "N",
+                        stopbits = 1,
+                        xonxoff = False,
+                        rtscts = False,
+                        timeout = None,
+                        inter_byte_timeout = None,
+                        # write_timeout = wtimeout,
+                        dsrdtr = False,
+                    )
+
+                    if vid == 0x0403:
+                        # Hardware parameters for FTDI devices @ 115200 baud
+                        serial.DEFAULT_READ_BUFFER_SIZE = 16 * 1024
+                        serial.USB_READ_TIMEOUT_MILLIS = 100
+                        serial.timeout = 0.1
+                    elif vid == 0x10C4:
+                        # Hardware parameters for SiLabs CP210x @ 115200 baud
+                        serial.DEFAULT_READ_BUFFER_SIZE = 64
+                        serial.USB_READ_TIMEOUT_MILLIS = 12
+                        serial.timeout = 0.012
+                    elif vid == 0x1A86 and pid == 0x55D4:
+                        # Hardware parameters for Qinheng CH34x @ 115200 baud
+                        serial.DEFAULT_READ_BUFFER_SIZE = 64
+                        serial.USB_READ_TIMEOUT_MILLIS = 12
+                        serial.timeout = 0.1
+                    else:
+                        # Default values
+                        serial.DEFAULT_READ_BUFFER_SIZE = 1 * 1024
+                        serial.USB_READ_TIMEOUT_MILLIS = 100
+                        serial.timeout = 0.1
+
+            elif device_serial != None:
+                serial = device_serial
+
+            if serial != None:
+                if serial.is_open:
+                    kiss_command = bytes([KISS.FEND, KISS.CMD_BT_CTRL, bluetooth_state, KISS.FEND])
+                    serial.write(kiss_command)
+                    if pairing_mode:
+                        kiss_command = bytes([KISS.FEND, KISS.CMD_BT_CTRL, 0x02, KISS.FEND])
+                        serial.write(kiss_command)
+
+            if port != None:
+                serial.close()
+
+
+    def __init__(
+        self, owner, name, port, subint_config, flow_control = False, id_interval = None,
+        allow_bluetooth = False, target_device_name = None,
+        target_device_address = None, id_callsign = None, st_alock = None, lt_alock = None,
+        ble_addr = None, ble_name = None, force_ble=True):
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
@@ -488,7 +426,6 @@ class RNodeMultiInterface(Interface):
                 if allow_bluetooth:
                     self.bt_manager = AndroidBluetoothManager(
                         owner = self,
-                        ble_dispatcher = ble_dispatcher,
                         target_device_name = self.bt_target_device_name,
                         target_device_address = self.bt_target_device_address
                     )
@@ -519,10 +456,18 @@ class RNodeMultiInterface(Interface):
         self.stopbits    = 1
         self.timeout     = 100
         self.online      = False
+        self.detached    = False
         self.hw_errors   = []
         self.allow_bluetooth = allow_bluetooth
-        self.detached    = False
-        self.reconnecting= False
+
+        self.use_ble     = False
+        self.ble_name    = ble_name
+        self.ble_addr    = ble_addr
+        self.ble         = None
+        self.ble_rx_lock = threading.Lock()
+        self.ble_tx_lock = threading.Lock()
+        self.ble_rx_queue= b""
+        self.ble_tx_queue= b""
 
         self.bitrate     = 0
         self.platform    = None
@@ -560,7 +505,8 @@ class RNodeMultiInterface(Interface):
         self.port_io_timeout = RNodeMultiInterface.PORT_IO_TIMEOUT
         self.last_imagedata = None
 
-        self.ble = ble_dispatcher
+        if force_ble or self.ble_addr != None or self.ble_name != None:
+            self.use_ble = True
 
         self.validcfg  = True
         if id_interval != None and id_callsign != None:
@@ -626,83 +572,108 @@ class RNodeMultiInterface(Interface):
             raise IOError("No ports available for writing")
 
     def open_port(self):
-        if self.port != None:
-            RNS.log("Opening serial port "+self.port+"...")
-            # Get device parameters
-            from usb4a import usb
-            device = usb.get_usb_device(self.port)
-            if device:
-                vid = device.getVendorId()
-                pid = device.getProductId()
+        if not self.use_ble:
+            if self.port != None:
+                RNS.log("Opening serial port "+self.port+"...")
+                # Get device parameters
+                from usb4a import usb
+                device = usb.get_usb_device(self.port)
+                if device:
+                    vid = device.getVendorId()
+                    pid = device.getProductId()
 
-                # Driver overrides for speficic chips
-                proxy = self.pyserial.get_serial_port
-                if vid == 0x1A86 and pid == 0x55D4:
-                    # Force CDC driver for Qinheng CH34x
-                    RNS.log(str(self)+" using CDC driver for "+RNS.hexrep(vid)+":"+RNS.hexrep(pid), RNS.LOG_DEBUG)
-                    from usbserial4a.cdcacmserial4a import CdcAcmSerial
-                    proxy = CdcAcmSerial
+                    # Driver overrides for speficic chips
+                    proxy = self.pyserial.get_serial_port
+                    if vid == 0x1A86 and pid == 0x55D4:
+                        # Force CDC driver for Qinheng CH34x
+                        RNS.log(str(self)+" using CDC driver for "+RNS.hexrep(vid)+":"+RNS.hexrep(pid), RNS.LOG_DEBUG)
+                        from usbserial4a.cdcacmserial4a import CdcAcmSerial
+                        proxy = CdcAcmSerial
 
-                self.serial = proxy(
-                    self.port,
-                    baudrate = self.speed,
-                    bytesize = self.databits,
-                    parity = self.parity,
-                    stopbits = self.stopbits,
-                    xonxoff = False,
-                    rtscts = False,
-                    timeout = None,
-                    inter_byte_timeout = None,
-                    # write_timeout = wtimeout,
-                    dsrdtr = False,
-                )
+                    self.serial = proxy(
+                        self.port,
+                        baudrate = self.speed,
+                        bytesize = self.databits,
+                        parity = self.parity,
+                        stopbits = self.stopbits,
+                        xonxoff = False,
+                        rtscts = False,
+                        timeout = None,
+                        inter_byte_timeout = None,
+                        # write_timeout = wtimeout,
+                        dsrdtr = False,
+                    )
 
-                if vid == 0x0403:
-                    # Hardware parameters for FTDI devices @ 115200 baud
-                    self.serial.DEFAULT_READ_BUFFER_SIZE = 16 * 1024
-                    self.serial.USB_READ_TIMEOUT_MILLIS = 100
-                    self.serial.timeout = 0.1
-                elif vid == 0x10C4:
-                    # Hardware parameters for SiLabs CP210x @ 115200 baud
-                    self.serial.DEFAULT_READ_BUFFER_SIZE = 64 
-                    self.serial.USB_READ_TIMEOUT_MILLIS = 12
-                    self.serial.timeout = 0.012
-                elif vid == 0x1A86 and pid == 0x55D4:
-                    # Hardware parameters for Qinheng CH34x @ 115200 baud
-                    self.serial.DEFAULT_READ_BUFFER_SIZE = 64
-                    self.serial.USB_READ_TIMEOUT_MILLIS = 12
-                    self.serial.timeout = 0.1
-                else:
-                    # Default values
-                    self.serial.DEFAULT_READ_BUFFER_SIZE = 1 * 1024
-                    self.serial.USB_READ_TIMEOUT_MILLIS = 100
-                    self.serial.timeout = 0.1
+                    if vid == 0x0403:
+                        # Hardware parameters for FTDI devices @ 115200 baud
+                        self.serial.DEFAULT_READ_BUFFER_SIZE = 16 * 1024
+                        self.serial.USB_READ_TIMEOUT_MILLIS = 100
+                        self.serial.timeout = 0.1
+                    elif vid == 0x10C4:
+                        # Hardware parameters for SiLabs CP210x @ 115200 baud
+                        self.serial.DEFAULT_READ_BUFFER_SIZE = 64 
+                        self.serial.USB_READ_TIMEOUT_MILLIS = 12
+                        self.serial.timeout = 0.012
+                    elif vid == 0x1A86 and pid == 0x55D4:
+                        # Hardware parameters for Qinheng CH34x @ 115200 baud
+                        self.serial.DEFAULT_READ_BUFFER_SIZE = 64
+                        self.serial.USB_READ_TIMEOUT_MILLIS = 12
+                        self.serial.timeout = 0.1
+                    else:
+                        # Default values
+                        self.serial.DEFAULT_READ_BUFFER_SIZE = 1 * 1024
+                        self.serial.USB_READ_TIMEOUT_MILLIS = 100
+                        self.serial.timeout = 0.1
 
-                RNS.log(str(self)+" USB read buffer size set to "+RNS.prettysize(self.serial.DEFAULT_READ_BUFFER_SIZE), RNS.LOG_DEBUG)
-                RNS.log(str(self)+" USB read timeout set to "+str(self.serial.USB_READ_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
-                RNS.log(str(self)+" USB write timeout set to "+str(self.serial.USB_WRITE_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
+                    RNS.log(str(self)+" USB read buffer size set to "+RNS.prettysize(self.serial.DEFAULT_READ_BUFFER_SIZE), RNS.LOG_DEBUG)
+                    RNS.log(str(self)+" USB read timeout set to "+str(self.serial.USB_READ_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
+                    RNS.log(str(self)+" USB write timeout set to "+str(self.serial.USB_WRITE_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
 
-        elif self.allow_bluetooth:
-            if self.bt_manager == None:
-                self.bt_manager = AndroidBluetoothManager(
-                    owner = self,
-                    ble_dispatcher = self.ble,
-                    target_device_name = self.bt_target_device_name,
-                    target_device_address = self.bt_target_device_address
-                )
+            elif self.allow_bluetooth:
+                if self.bt_manager == None:
+                    self.bt_manager = AndroidBluetoothManager(
+                        owner = self,
+                        ble_dispatcher = self.ble,
+                        target_device_name = self.bt_target_device_name,
+                        target_device_address = self.bt_target_device_address
+                    )
 
-            if self.bt_manager != None:
-                self.bt_manager.connect_any_device()
+                if self.bt_manager != None:
+                    self.bt_manager.connect_any_device()
+        else:
+            if self.ble == None:
+                self.ble = BLEConnection(owner=self, target_name=self.ble_name, target_bt_addr=self.ble_addr)
+                self.serial = self.ble
+
+            open_time = time.time()
+            while not self.ble.connected and time.time() < open_time + self.ble.CONNECT_TIMEOUT:
+                time.sleep(1)
+
+    def resetRadioState(self):
+        self.r_frequency = None
+        self.r_bandwidth = None
+        self.r_txpower = None
+        self.r_sf = None
+        self.r_cr = None
+        self.r_state = None
 
     def configure_device(self):
+        self.resetRadioState()
         sleep(2.0)
-
-        thread = threading.Thread(target=self.readLoop)
-        thread.daemon = True
-        thread.start()
+        thread = threading.Thread(target=self.readLoop, daemon=True).start()
 
         self.detect()
-        sleep(0.5)
+        if not self.use_ble:
+            sleep(0.5)
+        else:
+            ble_detect_timeout = 5
+            detect_time = time.time()
+            while not self.detected and time.time() < detect_time + ble_detect_timeout:
+                time.sleep(0.1)
+            if self.detected:
+                detect_time = RNS.prettytime(time.time()-detect_time)
+            else:
+                RNS.log(f"RNode detect timed out over {self.port}", RNS.LOG_ERROR)
         
         if not self.detected:
             raise IOError("Could not detect device")
@@ -1356,6 +1327,9 @@ class RNodeMultiInterface(Interface):
                 self.setRadioState(KISS.RADIO_STATE_OFF, interface)
         self.leave()
 
+        if self.use_ble:
+            self.ble.close()
+
     def teardown_subinterfaces(self):
         for interface in self.subinterfaces:
             if interface != 0:
@@ -1381,6 +1355,19 @@ class RNodeMultiInterface(Interface):
 
     def get_battery_percent(self):
         return self.r_battery_percent
+
+    def ble_receive(self, data):
+        with self.ble_rx_lock:
+            self.ble_rx_queue += data
+
+    def ble_waiting(self):
+        return len(self.ble_tx_queue) > 0
+
+    def get_ble_waiting(self, n):
+        with self.ble_tx_lock:
+            data = self.ble_tx_queue[:n]
+            self.ble_tx_queue = self.ble_tx_queue[n:]
+            return data
 
     def process_queue(self):
         for interface in self.subinterfaces:
@@ -1573,18 +1560,31 @@ class RNodeSubInterface(Interface):
 
     def initRadio(self):
         self.parent_interface.setFrequency(self.frequency, self)
+        time.sleep(0.15)
         self.parent_interface.setBandwidth(self.bandwidth, self)
+        time.sleep(0.15)
         self.parent_interface.setTXPower(self.txpower, self)
+        time.sleep(0.15)
         self.parent_interface.setSpreadingFactor(self.sf, self)
+        time.sleep(0.15)
         self.parent_interface.setCodingRate(self.cr, self)
+        time.sleep(0.15)
         self.parent_interface.setSTALock(self.st_alock, self)
+        time.sleep(0.15)
         self.parent_interface.setLTALock(self.lt_alock, self)
+        time.sleep(0.15)
         self.parent_interface.setRadioState(KISS.RADIO_STATE_ON, self)
-        self.state = KISS.RADIO_STATE_ON
+        time.sleep(0.15)
+
+        if self.use_ble:
+            time.sleep(1)
 
     def validateRadioState(self):
         RNS.log("Waiting for radio configuration validation for "+str(self)+"...", RNS.LOG_VERBOSE)
-        sleep(1);
+        if not self.platform == KISS.PLATFORM_ESP32:
+            sleep(1.00)
+        else:
+            sleep(2.00)
 
         self.validcfg = True
         if (self.r_frequency != None and abs(self.frequency - int(self.r_frequency)) > 100):
@@ -1607,7 +1607,6 @@ class RNodeSubInterface(Interface):
             return True
         else:
             return False
-
 
     def updateBitrate(self):
         try:
@@ -1654,3 +1653,236 @@ class RNodeSubInterface(Interface):
 
     def __str__(self):
         return self.parent_interface.name+"["+self.name+"]"
+
+class BLEConnection(BluetoothDispatcher):
+    UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+    UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+    UART_TX_CHAR_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+    MAX_GATT_ATTR_LEN = 512
+    BASE_MTU          = 20
+    TARGET_MTU        = 512
+
+    MTU_TIMEOUT = 4.0
+    CONNECT_TIMEOUT = 7.0
+    RECONNECT_WAIT = 1.0
+
+    @property
+    def is_open(self):
+        return self.connected
+
+    @property
+    def in_waiting(self):
+        return len(self.owner.ble_rx_queue) > 0
+
+    def write(self, data_bytes):
+        with self.owner.ble_tx_lock:
+            self.owner.ble_tx_queue += data_bytes
+            return len(data_bytes)
+
+    def read(self):
+        with self.owner.ble_rx_lock:
+            data = self.owner.ble_rx_queue
+            self.owner.ble_rx_queue = b""
+            return data
+
+    def close(self):
+        try:
+            if self.connected:
+                RNS.log(f"Disconnecting BLE device from {self.owner}", RNS.LOG_DEBUG)
+                # RNS.log("Waiting for BLE write buffer to empty...")
+                timeout = time.time() + 10
+                while self.owner.ble_waiting() and self.write_thread != None and time.time() < timeout:
+                    time.sleep(0.1)
+                # if time.time() > timeout:
+                #     RNS.log("Writing timed out")
+                # else:
+                #     RNS.log("Writing concluded")
+
+                self.rx_char = None
+                self.tx_char = None
+                self.mtu = BLEConnection.BASE_MTU
+                self.mtu_requested_time = None
+
+                if self.write_thread != None:
+                    # RNS.log("Waiting for write thread to finish...")
+                    while self.write_thread != None:
+                        time.sleep(0.1)
+
+                # RNS.log("Writing finished, closing GATT connection")
+                self.close_gatt()
+
+                with self.owner.ble_rx_lock:
+                    self.owner.ble_rx_queue = b""
+
+                with self.owner.ble_tx_lock:
+                    self.owner.ble_tx_queue = b""
+
+                self.connected = False
+                self.ble_device = None
+
+        except Exception as e:
+            RNS.log("An error occurred while closing BLE connection for {self.owner}: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
+
+    def __init__(self, owner=None, target_name=None, target_bt_addr=None):
+        super(BLEConnection, self).__init__()
+        self.owner = owner
+        self.target_name = target_name
+        self.target_bt_addr = target_bt_addr
+        self.connect_timeout = BLEConnection.CONNECT_TIMEOUT
+        self.ble_device = None
+        self.rx_char = None
+        self.tx_char = None
+        self.connected = False
+        self.was_connected = False
+        self.connected_time = None
+        self.mtu_requested_time = None
+        self.running = False
+        self.should_run = False
+        self.connect_job_running = False
+        self.write_thread = None
+        self.mtu = BLEConnection.BASE_MTU
+        self.target_mtu = BLEConnection.TARGET_MTU
+
+        self.bt_manager = AndroidBluetoothManager(owner=self)
+
+        self.should_run = True
+        self.connection_thread = threading.Thread(target=self.connection_job, daemon=True).start()
+
+    def write_loop(self):
+        try:
+            while self.connected and self.rx_char != None:
+                if self.owner.ble_waiting():
+                    data = self.owner.get_ble_waiting(self.mtu)
+                    self.write_characteristic(self.rx_char, data)
+                else:
+                    time.sleep(0.1)
+        
+        except Exception as e:
+            RNS.log("An error occurred in {self} write loop: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
+
+        self.write_thread = None
+
+    def connection_job(self):
+        while self.should_run:
+            if self.bt_manager.bt_enabled():
+                if self.ble_device == None:
+                    self.ble_device = self.find_target_device()
+
+                if self.ble_device != None:
+                    if not self.connected:
+                        if self.was_connected:
+                            RNS.log(f"Throttling BLE reconnect for {BLEConnection.RECONNECT_WAIT} seconds", RNS.LOG_DEBUG)
+                            time.sleep(BLEConnection.RECONNECT_WAIT)
+
+                        self.connect_device()
+
+            else:
+                if self.connected:
+                    RNS.log("Bluetooth was disabled, closing active BLE device connection", RNS.LOG_ERROR)
+                    self.close()
+
+            time.sleep(2)
+
+    def connect_device(self):
+        if self.ble_device != None and self.bt_manager.bt_enabled():
+            RNS.log(f"Trying to connect BLE device {self.ble_device.getName()} / {self.ble_device.getAddress()} for {self.owner}...", RNS.LOG_DEBUG)
+            self.mtu = BLEConnection.BASE_MTU
+            self.connect_by_device_address(self.ble_device.getAddress())
+            end = time.time() + BLEConnection.CONNECT_TIMEOUT
+            while time.time() < end and not self.connected:
+                time.sleep(0.25)
+
+            if self.connected:
+                self.owner.port = f"ble://{self.ble_device.getAddress()}"
+                self.write_thread = threading.Thread(target=self.write_loop, daemon=True)
+                self.write_thread.start()
+            else:
+                RNS.log(f"BLE device connection timed out for {self.owner}", RNS.LOG_DEBUG)
+                if self.mtu_requested_time:
+                    RNS.log("MTU update timeout, tearing down connection")
+                    self.owner.hw_errors.append({"error": KISS.ERROR_INVALID_BLE_MTU, "description": "The Bluetooth Low Energy transfer MTU could not be configured for the connected device, and communication has failed. Restart Reticulum and any connected applications to retry connecting."})
+                    self.close()
+                    self.should_run = False
+                
+                self.close_gatt()
+
+            self.connect_job_running = False
+
+    def device_disconnected(self):
+        RNS.log(f"BLE device for {self.owner} disconnected", RNS.LOG_NOTICE)
+        self.connected = False
+        self.ble_device = None
+        self.close_gatt()
+
+    def find_target_device(self):
+        found_device = None
+        potential_devices = self.bt_manager.get_paired_devices()
+
+        if self.target_bt_addr != None:
+            for device in potential_devices:
+                if (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_LE) or (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
+                    if str(device.getAddress()).replace(":", "").lower() == str(self.target_bt_addr).replace(":", "").lower():
+                        found_device = device
+                        break
+
+        if not found_device and self.target_name != None:
+            for device in potential_devices:
+                if (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_LE) or (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
+                    if device.getName().lower() == self.target_name.lower():
+                        found_device = device
+                        break
+
+        if not found_device:
+            for device in potential_devices:
+                if (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_LE) or (device.getType() == AndroidBluetoothManager.DEVICE_TYPE_DUAL):
+                    if device.getName().startswith("RNode "):
+                        found_device = device
+                        break
+
+        return found_device
+
+    def on_connection_state_change(self, status, state):
+        if status == GATT_SUCCESS and state:
+            self.discover_services()
+        else:
+            self.device_disconnected()
+
+    def on_services(self, status, services):
+        if status == GATT_SUCCESS:
+            self.rx_char = services.search(BLEConnection.UART_RX_CHAR_UUID)
+            
+            if self.rx_char is not None:
+                self.tx_char = services.search(BLEConnection.UART_TX_CHAR_UUID)
+
+                if self.tx_char is not None:                
+                    if self.enable_notifications(self.tx_char):
+                        RNS.log("Enabled notifications for BLE TX characteristic", RNS.LOG_DEBUG)
+                        
+                        RNS.log(f"Requesting BLE connection MTU update to {self.target_mtu}", RNS.LOG_DEBUG)
+                        self.mtu_requested_time = time.time()
+                        self.request_mtu(self.target_mtu)
+
+                    else:
+                        RNS.log("Could not enable notifications for BLE TX characteristic", RNS.LOG_ERROR)
+
+        else:
+            RNS.log("BLE device service discovery failure", RNS.LOG_ERROR)
+
+    def on_mtu_changed(self, mtu, status):
+        if status == GATT_SUCCESS:
+            self.mtu = min(mtu-5, BLEConnection.MAX_GATT_ATTR_LEN)
+            RNS.log(f"BLE MTU updated to {self.mtu} for {self.owner}", RNS.LOG_DEBUG)
+            self.connected = True
+            self.was_connected = True
+            self.connected_time = time.time()
+            self.mtu_requested_time = None
+
+        else:
+            RNS.log(f"MTU update request did not succeed, mtu={mtu}, status={status}", RNS.LOG_ERROR)
+
+    def on_characteristic_changed(self, characteristic):
+        if characteristic.getUuid().toString() == BLEConnection.UART_TX_CHAR_UUID:
+            recvd = bytes(characteristic.getValue())
+            self.owner.ble_receive(recvd)
