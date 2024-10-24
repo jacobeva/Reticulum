@@ -463,6 +463,11 @@ class RNodeMultiInterface(Interface):
 
     MAX_SUBINTERFACES = 11
 
+    BATTERY_STATE_UNKNOWN     = 0x00
+    BATTERY_STATE_DISCHARGING = 0x01
+    BATTERY_STATE_CHARGING    = 0x02
+    BATTERY_STATE_CHARGED     = 0x03
+
     def __init__(self, owner, name, port, subint_config, id_interval = None, id_callsign = None, ble_dispatcher = None, allow_bluetooth = False, target_device_name = None, target_device_address = None):
         import importlib
         if RNS.vendor.platformutils.is_android():
@@ -543,6 +548,9 @@ class RNodeMultiInterface(Interface):
         self.r_st_alock  = None
         self.r_lt_alock  = None
         self.r_random    = None
+
+        self.r_battery_state = RNodeMultiInterface.BATTERY_STATE_UNKNOWN
+        self.r_battery_percent = 0
 
         self.packet_queue    = []
         self.interface_ready = False
@@ -1204,6 +1212,25 @@ class RNodeMultiInterface(Interface):
                                             RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting symbol time is "+str(round(self.subinterfaces[self.selected_index].r_symbol_time_ms,2))+"ms (at "+str(self.subinterfaces[self.selected_index].r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
                                             RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting preamble is "+str(self.subinterfaces[self.selected_index].r_preamble_symbols)+" symbols ("+str(self.subinterfaces[self.selected_index].r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
                                             RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting CSMA slot time is "+str(self.subinterfaces[self.selected_index].r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
+                        elif (command == KISS.CMD_STAT_BAT):
+                            if (byte == KISS.FESC):
+                                escape = True
+                            else:
+                                if (escape):
+                                    if (byte == KISS.TFEND):
+                                        byte = KISS.FEND
+                                    if (byte == KISS.TFESC):
+                                        byte = KISS.FESC
+                                    escape = False
+                                command_buffer = command_buffer+bytes([byte])
+                                if (len(command_buffer) == 2):
+                                    bat_percent = command_buffer[1]
+                                    if bat_percent > 100:
+                                        bat_percent = 100
+                                    if bat_percent < 0:
+                                        bat_percent = 0
+                                    self.r_battery_state   = command_buffer[0]
+                                    self.r_battery_percent = bat_percent
                         elif (command == KISS.CMD_RANDOM):
                             self.r_random = byte
                         elif (command == KISS.CMD_PLATFORM):
@@ -1337,6 +1364,22 @@ class RNodeMultiInterface(Interface):
 
     def should_ingress_limit(self):
         return False
+
+    def get_battery_state(self):
+        return self.r_battery_state
+
+    def get_battery_state_string(self):
+        if self.r_battery_state == RNodeMultiInterface.BATTERY_STATE_CHARGED:
+            return "charged"
+        elif  self.r_battery_state == RNodeMultiInterface.BATTERY_STATE_CHARGING:
+            return "charging"
+        elif self.r_battery_state == RNodeMultiInterface.BATTERY_STATE_DISCHARGING:
+            return "discharging"
+        else:
+            return "unknown"
+
+    def get_battery_percent(self):
+        return self.r_battery_percent
 
     def process_queue(self):
         for interface in self.subinterfaces:
