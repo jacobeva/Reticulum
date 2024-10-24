@@ -407,7 +407,7 @@ class RNodeMultiInterface(Interface):
         self, owner, name, port, subint_config, flow_control = False, id_interval = None,
         allow_bluetooth = False, target_device_name = None,
         target_device_address = None, id_callsign = None, st_alock = None, lt_alock = None,
-        ble_addr = None, ble_name = None, force_ble=True):
+        ble_addr = None, ble_name = None, force_ble = False):
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
