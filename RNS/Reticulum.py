@@ -29,6 +29,7 @@ if get_platform() == "android":
     from .Interfaces import TCPInterface
     from .Interfaces import UDPInterface
     from .Interfaces import I2PInterface
+    from .Interfaces import RNodeMultiInterface
     from .Interfaces.Android import RNodeInterface
     from .Interfaces.Android import RNodeMultiInterface
     from .Interfaces.Android import SerialInterface
@@ -918,11 +919,28 @@ class Reticulum:
                                     st_alock = float(c["airtime_limit_short"]) if "airtime_limit_short" in c else None
                                     lt_alock = float(c["airtime_limit_long"]) if "airtime_limit_long" in c else None
 
+                                    force_ble = False
+                                    ble_name = None
+                                    ble_addr = None
+
                                     port = c["port"] if "port" in c else None
-                                    
+
                                     if port == None:
                                         raise ValueError("No port specified for RNode interface")
 
+                                    if port != None:
+                                        ble_uri_scheme = "ble://"
+                                        if port.lower().startswith(ble_uri_scheme):
+                                            force_ble = True
+                                            ble_string = port[len(ble_uri_scheme):]
+                                            port = None
+                                            if len(ble_string) == 0:
+                                                pass
+                                            elif len(ble_string.split(":")) == 6 and len(ble_string) == 17:
+                                                ble_addr = ble_string
+                                            else:
+                                                ble_name = ble_string
+                                    
                                     interface = RNodeInterface.RNodeInterface(
                                         RNS.Transport,
                                         name,
@@ -936,7 +954,10 @@ class Reticulum:
                                         id_interval = id_interval,
                                         id_callsign = id_callsign,
                                         st_alock = st_alock,
-                                        lt_alock = lt_alock
+                                        lt_alock = lt_alock,
+                                        ble_addr = ble_addr,
+                                        ble_name = ble_name,
+                                        force_ble = force_ble,
                                     )
 
                                     if "outgoing" in c and c.as_bool("outgoing") == False:
@@ -1086,6 +1107,9 @@ class Reticulum:
                                         interface.start()
 
                                     RNS.Transport.interfaces.append(interface)
+
+                                    if isinstance(interface, RNS.Interfaces.RNodeMultiInterface.RNodeMultiInterface):
+                                        interface.start()
 
                             else:
                                 RNS.log("Skipping disabled interface \""+name+"\"", RNS.LOG_DEBUG)
@@ -1266,6 +1290,10 @@ class Reticulum:
                 else:
                     ifstats["clients"] = None
 
+                if hasattr(interface, "parent_interface") and interface.parent_interface != None:
+                    ifstats["parent_interface_name"] = str(interface.parent_interface)
+                    ifstats["parent_interface_hash"] = interface.parent_interface.get_hash()
+
                 if hasattr(interface, "i2p") and hasattr(interface, "connectable"):
                     if interface.connectable:
                         ifstats["i2p_connectable"] = True
@@ -1303,6 +1331,13 @@ class Reticulum:
                 if hasattr(interface, "r_channel_load_long"):
                     ifstats["channel_load_long"] = interface.r_channel_load_long
 
+                if hasattr(interface, "r_battery_state"):
+                    if interface.r_battery_state != 0x00:
+                        ifstats["battery_state"] = interface.get_battery_state_string()
+
+                    if hasattr(interface, "r_battery_percent"):
+                        ifstats["battery_percent"] = interface.r_battery_percent
+
                 if hasattr(interface, "bitrate"):
                     if interface.bitrate != None:
                         ifstats["bitrate"] = interface.bitrate
@@ -1331,6 +1366,9 @@ class Reticulum:
                         ifstats["announce_queue"] = None
 
                 ifstats["name"] = str(interface)
+                ifstats["short_name"] = str(interface.name)
+                ifstats["hash"] = interface.get_hash()
+                ifstats["type"] = str(type(interface).__name__)
                 ifstats["rxb"] = interface.rxb
                 ifstats["txb"] = interface.txb
                 ifstats["incoming_announce_frequency"] = interface.incoming_announce_frequency()

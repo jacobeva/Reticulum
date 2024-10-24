@@ -341,6 +341,33 @@ class Packet:
 
         return hashable_part
 
+    def get_rssi(self):
+        """
+        :returns: The physical layer *Received Signal Strength Indication* if available, otherwise ``None``.
+        """
+        if self.rssi != None:
+            return self.rssi
+        else:
+            return reticulum.get_packet_rssi(self.packet_hash)
+            
+    def get_snr(self):
+        """
+        :returns: The physical layer *Signal-to-Noise Ratio* if available, otherwise ``None``.
+        """
+        if self.snr != None:
+            return self.snr
+        else:
+            return reticulum.get_packet_snr(self.packet_hash)
+
+    def get_q(self):
+        """
+        :returns: The physical layer *Link Quality* if available, otherwise ``None``.
+        """
+        if self.q != None:
+            return self.q
+        else:
+            return reticulum.get_packet_q(self.packet_hash)
+
 class ProofDestination:
     def __init__(self, packet):
         self.hash = packet.get_hash()[:RNS.Reticulum.TRUNCATED_HASHLENGTH//8];
@@ -453,7 +480,7 @@ class PacketReceipt:
             # This is an explicit proof
             proof_hash = proof[:RNS.Identity.HASHLENGTH//8]
             signature = proof[RNS.Identity.HASHLENGTH//8:RNS.Identity.HASHLENGTH//8+RNS.Identity.SIGLENGTH//8]
-            if proof_hash == self.hash:
+            if proof_hash == self.hash and hasattr(self.destination, "identity") and self.destination.identity != None:
                 proof_valid = self.destination.identity.validate(signature, self.hash)
                 if proof_valid:
                     self.status = PacketReceipt.DELIVERED

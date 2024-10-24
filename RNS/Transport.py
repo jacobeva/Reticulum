@@ -65,7 +65,7 @@ class Transport:
 
     PATH_REQUEST_TIMEOUT        = 15           # Default timuout for client path requests in seconds
     PATH_REQUEST_GRACE          = 0.4          # Grace time before a path announcement is made, allows directly reachable peers to respond first
-    PATH_REQUEST_RG             = 0.6          # Extra grace time for roaming-mode interfaces to allow more suitable peers to respond first
+    PATH_REQUEST_RG             = 1.5          # Extra grace time for roaming-mode interfaces to allow more suitable peers to respond first
     PATH_REQUEST_MI             = 20           # Minimum interval in seconds for automated path requests
 
     STATE_UNKNOWN               = 0x00
@@ -1736,8 +1736,28 @@ class Transport:
                 if packet.destination_type == RNS.Destination.LINK:
                     for link in Transport.active_links:
                         if link.link_id == packet.destination_hash:
-                            packet.link = link
-                            link.receive(packet)
+                            if link.attached_interface == packet.receiving_interface:
+                                packet.link = link
+                                if packet.context == RNS.Packet.CACHE_REQUEST:
+                                    cached_packet = Transport.get_cached_packet(packet.data)
+                                    if cached_packet != None:
+                                        cached_packet.unpack()
+                                        RNS.Packet(destination=link, data=cached_packet.data,
+                                                   packet_type=cached_packet.packet_type, context=cached_packet.context).send()
+
+                                    Transport.jobs_locked = False
+                                else:
+                                    link.receive(packet)
+                            else:
+                                # In the strange and rare case that an interface
+                                # is partly malfunctioning, and a link-associated
+                                # packet is being received on an interface that
+                                # has failed sending, and transport has failed over
+                                # to another path, we remove this packet hash from
+                                # the filter hashlist so the link can receive the
+                                # packet when it finally arrives over another path.
+                                while packet.packet_hash in Transport.packet_hashlist:
+                                    Transport.packet_hashlist.remove(packet.packet_hash)
                 else:
                     for destination in Transport.destinations:
                         if destination.hash == packet.destination_hash and destination.type == packet.destination_type:
