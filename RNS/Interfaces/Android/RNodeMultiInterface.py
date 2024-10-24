@@ -1576,7 +1576,7 @@ class RNodeSubInterface(Interface):
         self.parent_interface.setRadioState(KISS.RADIO_STATE_ON, self)
         time.sleep(0.15)
 
-        if self.use_ble:
+        if self.owner.use_ble:
             time.sleep(1)
 
     def validateRadioState(self):
