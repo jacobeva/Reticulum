@@ -56,6 +56,7 @@ class KISS():
     CMD_STAT_SNR    = 0x24
     CMD_STAT_CHTM   = 0x25
     CMD_STAT_PHYPRM = 0x26
+    CMD_STAT_BAT    = 0x27
     CMD_BLINK       = 0x30
     CMD_RANDOM      = 0x40
     CMD_FB_EXT      = 0x41
