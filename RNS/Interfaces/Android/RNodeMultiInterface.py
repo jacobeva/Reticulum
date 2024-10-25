@@ -672,6 +672,7 @@ class RNodeMultiInterface(Interface):
                 time.sleep(0.1)
             if self.detected:
                 detect_time = RNS.prettytime(time.time()-detect_time)
+                time.sleep(0.5)
             else:
                 RNS.log(f"RNode detect timed out over {self.port}", RNS.LOG_ERROR)
         
@@ -732,7 +733,7 @@ class RNodeMultiInterface(Interface):
 
                 self.clients += 1
             else:
-                raise ValueError("Virtual port \""+subint[1]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
+                raise ValueError("Virtual port \""+str(subint[1])+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
         self.online = True
 
     def detect(self):
