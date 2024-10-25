@@ -573,75 +573,74 @@ class RNodeMultiInterface(Interface):
             raise IOError("No ports available for writing")
 
     def open_port(self):
-        if not self.use_ble:
-            if self.port != None:
-                RNS.log("Opening serial port "+self.port+"...")
-                # Get device parameters
-                from usb4a import usb
-                device = usb.get_usb_device(self.port)
-                if device:
-                    vid = device.getVendorId()
-                    pid = device.getProductId()
+        if self.port != None:
+            RNS.log("Opening serial port "+self.port+"...")
+            # Get device parameters
+            from usb4a import usb
+            device = usb.get_usb_device(self.port)
+            if device:
+                vid = device.getVendorId()
+                pid = device.getProductId()
 
-                    # Driver overrides for speficic chips
-                    proxy = self.pyserial.get_serial_port
-                    if vid == 0x1A86 and pid == 0x55D4:
-                        # Force CDC driver for Qinheng CH34x
-                        RNS.log(str(self)+" using CDC driver for "+RNS.hexrep(vid)+":"+RNS.hexrep(pid), RNS.LOG_DEBUG)
-                        from usbserial4a.cdcacmserial4a import CdcAcmSerial
-                        proxy = CdcAcmSerial
+                # Driver overrides for speficic chips
+                proxy = self.pyserial.get_serial_port
+                if vid == 0x1A86 and pid == 0x55D4:
+                    # Force CDC driver for Qinheng CH34x
+                    RNS.log(str(self)+" using CDC driver for "+RNS.hexrep(vid)+":"+RNS.hexrep(pid), RNS.LOG_DEBUG)
+                    from usbserial4a.cdcacmserial4a import CdcAcmSerial
+                    proxy = CdcAcmSerial
 
-                    self.serial = proxy(
-                        self.port,
-                        baudrate = self.speed,
-                        bytesize = self.databits,
-                        parity = self.parity,
-                        stopbits = self.stopbits,
-                        xonxoff = False,
-                        rtscts = False,
-                        timeout = None,
-                        inter_byte_timeout = None,
-                        # write_timeout = wtimeout,
-                        dsrdtr = False,
-                    )
+                self.serial = proxy(
+                    self.port,
+                    baudrate = self.speed,
+                    bytesize = self.databits,
+                    parity = self.parity,
+                    stopbits = self.stopbits,
+                    xonxoff = False,
+                    rtscts = False,
+                    timeout = None,
+                    inter_byte_timeout = None,
+                    # write_timeout = wtimeout,
+                    dsrdtr = False,
+                )
 
-                    if vid == 0x0403:
-                        # Hardware parameters for FTDI devices @ 115200 baud
-                        self.serial.DEFAULT_READ_BUFFER_SIZE = 16 * 1024
-                        self.serial.USB_READ_TIMEOUT_MILLIS = 100
-                        self.serial.timeout = 0.1
-                    elif vid == 0x10C4:
-                        # Hardware parameters for SiLabs CP210x @ 115200 baud
-                        self.serial.DEFAULT_READ_BUFFER_SIZE = 64 
-                        self.serial.USB_READ_TIMEOUT_MILLIS = 12
-                        self.serial.timeout = 0.012
-                    elif vid == 0x1A86 and pid == 0x55D4:
-                        # Hardware parameters for Qinheng CH34x @ 115200 baud
-                        self.serial.DEFAULT_READ_BUFFER_SIZE = 64
-                        self.serial.USB_READ_TIMEOUT_MILLIS = 12
-                        self.serial.timeout = 0.1
-                    else:
-                        # Default values
-                        self.serial.DEFAULT_READ_BUFFER_SIZE = 1 * 1024
-                        self.serial.USB_READ_TIMEOUT_MILLIS = 100
-                        self.serial.timeout = 0.1
+                if vid == 0x0403:
+                    # Hardware parameters for FTDI devices @ 115200 baud
+                    self.serial.DEFAULT_READ_BUFFER_SIZE = 16 * 1024
+                    self.serial.USB_READ_TIMEOUT_MILLIS = 100
+                    self.serial.timeout = 0.1
+                elif vid == 0x10C4:
+                    # Hardware parameters for SiLabs CP210x @ 115200 baud
+                    self.serial.DEFAULT_READ_BUFFER_SIZE = 64 
+                    self.serial.USB_READ_TIMEOUT_MILLIS = 12
+                    self.serial.timeout = 0.012
+                elif vid == 0x1A86 and pid == 0x55D4:
+                    # Hardware parameters for Qinheng CH34x @ 115200 baud
+                    self.serial.DEFAULT_READ_BUFFER_SIZE = 64
+                    self.serial.USB_READ_TIMEOUT_MILLIS = 12
+                    self.serial.timeout = 0.1
+                else:
+                    # Default values
+                    self.serial.DEFAULT_READ_BUFFER_SIZE = 1 * 1024
+                    self.serial.USB_READ_TIMEOUT_MILLIS = 100
+                    self.serial.timeout = 0.1
 
-                    RNS.log(str(self)+" USB read buffer size set to "+RNS.prettysize(self.serial.DEFAULT_READ_BUFFER_SIZE), RNS.LOG_DEBUG)
-                    RNS.log(str(self)+" USB read timeout set to "+str(self.serial.USB_READ_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
-                    RNS.log(str(self)+" USB write timeout set to "+str(self.serial.USB_WRITE_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
+                RNS.log(str(self)+" USB read buffer size set to "+RNS.prettysize(self.serial.DEFAULT_READ_BUFFER_SIZE), RNS.LOG_DEBUG)
+                RNS.log(str(self)+" USB read timeout set to "+str(self.serial.USB_READ_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
+                RNS.log(str(self)+" USB write timeout set to "+str(self.serial.USB_WRITE_TIMEOUT_MILLIS)+"ms", RNS.LOG_DEBUG)
 
-            elif self.allow_bluetooth:
-                if self.bt_manager == None:
-                    self.bt_manager = AndroidBluetoothManager(
-                        owner = self,
-                        ble_dispatcher = self.ble,
-                        target_device_name = self.bt_target_device_name,
-                        target_device_address = self.bt_target_device_address
-                    )
+        elif self.allow_bluetooth:
+            if self.bt_manager == None:
+                self.bt_manager = AndroidBluetoothManager(
+                    owner = self,
+                    ble_dispatcher = self.ble,
+                    target_device_name = self.bt_target_device_name,
+                    target_device_address = self.bt_target_device_address
+                )
 
-                if self.bt_manager != None:
-                    self.bt_manager.connect_any_device()
-        else:
+            if self.bt_manager != None:
+                self.bt_manager.connect_any_device()
+        elif self.use_ble:
             if self.ble == None:
                 self.ble = BLEConnection(owner=self, target_name=self.ble_name, target_bt_addr=self.ble_addr)
                 self.serial = self.ble
