@@ -485,6 +485,7 @@ class RNodeMultiInterface(Interface):
         self.last_id     = 0
         self.first_tx    = None
         self.reconnect_w = RNodeMultiInterface.RECONNECT_WAIT
+        self.reconnect_lock = threading.Lock()
 
         self.subinterfaces = [0] * RNodeMultiInterface.MAX_SUBINTERFACES
         self.subinterface_types = []
@@ -1292,6 +1293,10 @@ class RNodeMultiInterface(Interface):
             self.reconnect_port()
 
     def reconnect_port(self):
+        if self.reconnect_lock.locked():
+            RNS.log("Dropping superflous reconnect port job")
+            return
+
         while not self.online and len(self.hw_errors) == 0:
             try:
                 time.sleep(self.reconnect_w)
