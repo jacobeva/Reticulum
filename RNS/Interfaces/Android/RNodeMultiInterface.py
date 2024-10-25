@@ -1291,36 +1291,37 @@ class RNodeMultiInterface(Interface):
             RNS.log("Dropping superflous reconnect port job")
             return
 
-        while not self.online and len(self.hw_errors) == 0:
-            try:
-                time.sleep(self.reconnect_w)
-                if self.serial != None and self.port != None:
-                    RNS.log("Attempting to reconnect serial port "+str(self.port)+" for "+str(self)+"...", RNS.LOG_EXTREME)
+        with self.reconnect_lock:
+            while not self.online and len(self.hw_errors) == 0:
+                try:
+                    time.sleep(self.reconnect_w)
+                    if self.serial != None and self.port != None:
+                        RNS.log("Attempting to reconnect serial port "+str(self.port)+" for "+str(self)+"...", RNS.LOG_EXTREME)
 
-                if self.bt_manager != None:
-                    RNS.log("Attempting to reconnect Bluetooth device for "+str(self)+"...", RNS.LOG_EXTREME)
+                    if self.bt_manager != None:
+                        RNS.log("Attempting to reconnect Bluetooth device for "+str(self)+"...", RNS.LOG_EXTREME)
 
-                self.open_port()
+                    self.open_port()
 
-                if hasattr(self, "serial") and self.serial != None and self.serial.is_open:
-                    self.configure_device()
-                    if self.online:
-                        if self.last_imagedata != None:
-                            self.display_image(self.last_imagedata)
-                            self.enable_external_framebuffer()
-                
-                elif hasattr(self, "bt_manager") and self.bt_manager != None and self.bt_manager.connected:
-                    self.configure_device()
-                    if self.online:
-                        if self.last_imagedata != None:
-                            self.display_image(self.last_imagedata)
-                            self.enable_external_framebuffer()
+                    if hasattr(self, "serial") and self.serial != None and self.serial.is_open:
+                        self.configure_device()
+                        if self.online:
+                            if self.last_imagedata != None:
+                                self.display_image(self.last_imagedata)
+                                self.enable_external_framebuffer()
+                    
+                    elif hasattr(self, "bt_manager") and self.bt_manager != None and self.bt_manager.connected:
+                        self.configure_device()
+                        if self.online:
+                            if self.last_imagedata != None:
+                                self.display_image(self.last_imagedata)
+                                self.enable_external_framebuffer()
 
-            except Exception as e:
-                RNS.log("Error while reconnecting RNode, the contained exception was: "+str(e), RNS.LOG_ERROR)
+                except Exception as e:
+                    RNS.log("Error while reconnecting RNode, the contained exception was: "+str(e), RNS.LOG_ERROR)
 
-        if self.online:
-            RNS.log("Reconnected serial port for "+str(self))
+            if self.online:
+                RNS.log("Reconnected serial port for "+str(self))
 
     def detach(self):
         self.detached = True
