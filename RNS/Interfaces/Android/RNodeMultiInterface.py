@@ -870,7 +870,7 @@ class RNodeMultiInterface(Interface):
             self.selected_index = interface.index
 
     def setRadioState(self, state, interface):
-        #self.state = state
+        self.state = state
         kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_RADIO_STATE])+bytes([state])+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
