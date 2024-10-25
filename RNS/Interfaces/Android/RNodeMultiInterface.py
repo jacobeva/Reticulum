@@ -1282,7 +1282,7 @@ class RNodeMultiInterface(Interface):
         if self.bt_manager != None:
             self.bt_manager.close()
 
-        if not self.detached and not self.reconnecting:
+        if not self.detached:
             self.reconnect_port()
 
     def reconnect_port(self):
