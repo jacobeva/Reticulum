@@ -876,7 +876,7 @@ class RNodeMultiInterface(Interface):
             self.selected_index = interface.index
 
     def setRadioState(self, state, interface):
-        self.state = state
+        #self.state = state
         kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_RADIO_STATE])+bytes([state])+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
@@ -1038,7 +1038,7 @@ class RNodeMultiInterface(Interface):
                             if self.subinterfaces[self.selected_index] is not int:
                                 self.subinterfaces[self.selected_index].r_state = byte
                                 if self.subinterfaces[self.selected_index].r_state:
-                                    RNS.log(str(self)+" Radio reporting state is online", RNS.LOG_DEBUG)
+                                    RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting state is online", RNS.LOG_DEBUG)
                                 else:
                                     RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting state is offline", RNS.LOG_DEBUG)
 
@@ -1584,6 +1584,7 @@ class RNodeSubInterface(Interface):
         time.sleep(0.15)
         self.parent_interface.setRadioState(KISS.RADIO_STATE_ON, self)
         time.sleep(0.15)
+        self.state = KISS.RADIO_STATE_ON
 
         if self.parent_interface.use_ble:
             time.sleep(1)
