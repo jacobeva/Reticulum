@@ -738,7 +738,7 @@ class RNodeMultiInterface(Interface):
 
                 self.clients += 1
             else:
-                raise ValueError("Virtual port \""+subint[2]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
+                raise ValueError("Virtual port \""+subint[1]+"\" for subinterface "+subint[0]+" does not exist on "+self.name)
         self.online = True
 
     def detect(self):
@@ -1627,7 +1627,6 @@ class RNodeSubInterface(Interface):
             self.bitrate = 0
 
     def processIncoming(self, data):
-        RNS.log(data.hex())
         self.rxb += len(data)
         self.owner.inbound(data, self)
         self.r_stat_rssi = None
