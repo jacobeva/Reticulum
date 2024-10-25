@@ -1632,4 +1632,5 @@ class BLEConnection(BluetoothDispatcher):
     def on_characteristic_changed(self, characteristic):
         if characteristic.getUuid().toString() == BLEConnection.UART_TX_CHAR_UUID:
             recvd = bytes(characteristic.getValue())
+            RNS.log(recvd.hex())
             self.owner.ble_receive(recvd)
