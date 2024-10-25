@@ -1038,8 +1038,7 @@ class RNodeMultiInterface(Interface):
                             if self.subinterfaces[self.selected_index] is not int:
                                 self.subinterfaces[self.selected_index].r_state = byte
                                 if self.subinterfaces[self.selected_index].r_state:
-                                    pass
-                                    #RNS.log(str(self)+" Radio reporting state is online", RNS.LOG_DEBUG)
+                                    RNS.log(str(self)+" Radio reporting state is online", RNS.LOG_DEBUG)
                                 else:
                                     RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting state is offline", RNS.LOG_DEBUG)
 
