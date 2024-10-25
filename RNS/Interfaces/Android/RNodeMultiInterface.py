@@ -29,9 +29,6 @@ import time
 import math
 import RNS
 
-#debug
-import traceback
-
 try:
     from able import BluetoothDispatcher, GATT_SUCCESS
 except Exception as e:
@@ -548,8 +545,6 @@ class RNodeMultiInterface(Interface):
         except Exception as e:
             RNS.log("Could not open serial port for interface "+str(self), RNS.LOG_ERROR)
             RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
-            #debug
-            RNS.log(traceback.format_exc())
             if len(self.hw_errors) == 0:
                 RNS.log("Reticulum will attempt to bring up this interface periodically", RNS.LOG_ERROR)
                 thread = threading.Thread(target=self.reconnect_port)
