@@ -280,7 +280,7 @@ models = {
     0xBB: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_lora32v10.zip", "SX1276"],
     0xC4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_heltec32v2.zip", "SX1278"],
     0xC9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_heltec32v2.zip", "SX1276"],
-    0xC5: [420000000, 520000000, 21, "420 - 520 MHz", "rnode_firmware_heltec32v3.zip", "SX1262"],
+    0xC5: [420000000, 520000000, 21, "420 - 520 MHz", "rnode_firmware_heltec32v3.zip", "SX1268"],
     0xCA: [850000000, 950000000, 21, "850 - 950 MHz", "rnode_firmware_heltec32v3.zip", "SX1262"],
     0xE4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_tbeam.zip", "SX1278"],
     0xE9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_tbeam.zip", "SX1276"],
@@ -2737,6 +2737,7 @@ def main():
                             "0xe000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_heltec32v3.boot_app0",
                             "0x0",  UPD_DIR+"/"+selected_version+"/rnode_firmware_heltec32v3.bootloader",
                             "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_heltec32v3.bin",
+                            "0x210000",UPD_DIR+"/"+selected_version+"/console_image.bin",
                             "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_heltec32v3.partitions",
                         ]
                     elif fw_filename == "rnode_firmware_featheresp32.zip":

@@ -1,3 +1,63 @@
+### 2024-12-11: RNS β 0.8.8
+
+This maintenance release adds a single API function and fixes a bug.
+
+**Changes**
+- Allow announce handlers to receive announce packet hash
+- Fix packet RSSI/SNR/Q cache not being available on standalone instances
+
+**Release Hashes**
+```
+9c1755a81049c67b051ecb9fe4b2c5f7d98bf09d20ed52d6ce6a410298b0527b rns-0.8.8-py3-none-any.whl
+d8871d69cde4b0a0b99b383f324d651dc77a2f44ec9641be828902c778a8d128 rnspure-0.8.8-py3-none-any.whl
+```
+
+### 2024-12-09: RNS β 0.8.7
+
+This maintenance release adds support for OpenWRT packaging, and brings several minor improvements and bugfixes.
+
+Thanks to @gretel and @jacobeva, who contributed to this release!
+
+**Changes**
+- Added support for packaging RNS to OpenWRT
+- Added ability to run `rnstatus` as application-local imported module
+- Added ability to reflect RNS log output to app-internal log handler callback
+- Added display read functionality to `RNodeInterface`
+- Fixed a regression in `RNodeMultiInterface` caused by earlier refactoring
+- Imrpoved documentation
+
+**Release Hashes**
+```
+e76ba8feeeae2c8df27e9906deebd7c721f0f0e887ad3fbd26df0212d6ce907a rns-0.8.7-py3-none-any.whl
+046608539bc235d52c970c7f3c54e7aa01a86016ae00263f8a55fc796b6939f5 rnspure-0.8.7-py3-none-any.whl
+```
+
+### 2024-11-24: RNS β 0.8.6
+
+This release adds full interface modularity and custom interface loading to RNS. Users can now easily create and use their own custom interfaces for communicating over practically anything. Support for IPv6 has also been added to the TCP-based interfaces.
+
+In addition, several bugs have been fixed, and various internal improvements to code consistency and naming conventions have been carried out.
+
+Thanks to @gretel and @deavmi, who contributed to this release!
+
+**Changes**
+- Added ability to load and configure custom, user-supplied interfaces
+- Added IPv6 support to `TCPClientInterface` and `TCPServerInterface`
+- Added an init option to the API for requiring an existing shared instance
+- Changed `rnstatus` behaviour to only show status if Reticulum is already running
+- Fixed `KISSInterface` beacon length for compatibility with software modems
+- Fixed interface client count sometimes reporting incorrect values on TCP and I2P interfaces
+- Refactored and improved interface initialisation and configuration handling
+- Refactored interface code to be more consistent
+- Refactored various deprecated references and names
+- Updated documentation and manual
+
+**Release Hashes**
+```
+60be127f003cd7838149bf8f01020206f829a7bd192706a608e39d8d7193d07b rns-0.8.6-py3-none-any.whl
+d8701e19279d292b5b8af9da7c67b6ac88a992ca65109f8182c3e5c761a9ebeb rnspure-0.8.6-py3-none-any.whl
+```
+
 ### 2024-10-20: RNS β 0.8.5
 
 This maintenance release fixes a number of bugs. Thanks to @faragher for contributing to this release!

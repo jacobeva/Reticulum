@@ -35,9 +35,9 @@ if get_platform() == "android":
     from .Interfaces.Android import SerialInterface
     from .Interfaces.Android import KISSInterface
 else:
-    from .Interfaces import *
+    from RNS.Interfaces import *
 
-from .vendor.configobj import ConfigObj
+from RNS.vendor.configobj import ConfigObj
 import configparser
 import multiprocessing.connection
 import signal
@@ -150,6 +150,7 @@ class Reticulum:
     configpath       = ""
     storagepath      = ""
     cachepath        = ""
+    interfacepath    = ""
 
     __instance       = None
     
@@ -185,7 +186,7 @@ class Reticulum:
         """
         return Reticulum.__instance
 
-    def __init__(self,configdir=None, loglevel=None, logdest=None, verbosity=None):
+    def __init__(self,configdir=None, loglevel=None, logdest=None, verbosity=None, require_shared_instance=False):
         """
         Initialises and starts a Reticulum instance. This must be
         done before any other operations, and Reticulum will not
@@ -214,12 +215,16 @@ class Reticulum:
         if logdest == RNS.LOG_FILE:
             RNS.logdest = RNS.LOG_FILE
             RNS.logfile = Reticulum.configdir+"/logfile"
+        elif callable(logdest):
+            RNS.logdest = RNS.LOG_CALLBACK
+            RNS.logcall = logdest
         
         Reticulum.configpath    = Reticulum.configdir+"/config"
         Reticulum.storagepath   = Reticulum.configdir+"/storage"
         Reticulum.cachepath     = Reticulum.configdir+"/storage/cache"
         Reticulum.resourcepath  = Reticulum.configdir+"/storage/resources"
         Reticulum.identitypath  = Reticulum.configdir+"/storage/identities"
+        Reticulum.interfacepath = Reticulum.configdir+"/interfaces"
 
         Reticulum.__transport_enabled = False
         Reticulum.__remote_management_enabled = False
@@ -247,6 +252,7 @@ class Reticulum:
             RNS.loglevel = self.requested_loglevel
 
         self.is_shared_instance = False
+        self.require_shared = require_shared_instance
         self.is_connected_to_shared_instance = False
         self.is_standalone_instance = False
         self.jobs_thread = None
@@ -265,6 +271,9 @@ class Reticulum:
         if not os.path.isdir(Reticulum.identitypath):
             os.makedirs(Reticulum.identitypath)
 
+        if not os.path.isdir(Reticulum.interfacepath):
+            os.makedirs(Reticulum.interfacepath)
+
         if os.path.isfile(self.configpath):
             try:
                 self.config = ConfigObj(self.configpath)
@@ -279,7 +288,8 @@ class Reticulum:
             time.sleep(1.5)
 
         self.__apply_config()
-        RNS.log("Configuration loaded from "+self.configpath, RNS.LOG_VERBOSE)
+        RNS.log(f"Utilising cryptography backend \"{RNS.Cryptography.Provider.backend()}\"", RNS.LOG_VERBOSE)
+        RNS.log(f"Configuration loaded from {self.configpath}", RNS.LOG_VERBOSE)
         
         RNS.Identity.load_known_destinations()
 
@@ -331,11 +341,17 @@ class Reticulum:
                     interface.bitrate = Reticulum._force_shared_instance_bitrate
                     interface._force_bitrate = Reticulum._force_shared_instance_bitrate
                     RNS.log(f"Forcing shared instance bitrate of {RNS.prettyspeed(interface.bitrate)}", RNS.LOG_WARNING)
-                RNS.Transport.interfaces.append(interface)
                 
-                self.is_shared_instance = True
-                RNS.log("Started shared instance interface: "+str(interface), RNS.LOG_DEBUG)
-                self.__start_jobs()
+                if self.require_shared == True:
+                    interface.detach()
+                    self.is_shared_instance = True
+                    RNS.log("Existing shared instance required, but this instance started as shared instance. Aborting startup.", RNS.LOG_VERBOSE)
+
+                else:
+                    RNS.Transport.interfaces.append(interface)
+                    self.is_shared_instance = True
+                    RNS.log("Started shared instance interface: "+str(interface), RNS.LOG_DEBUG)
+                    self.__start_jobs()
 
             except Exception as e:
                 try:
@@ -363,6 +379,10 @@ class Reticulum:
                     self.is_shared_instance = False
                     self.is_standalone_instance = True
                     self.is_connected_to_shared_instance = False
+
+            if self.is_shared_instance and self.require_shared:
+                raise SystemError("No shared instance available, but application that started Reticulum required it")
+
         else:
             self.is_shared_instance = False
             self.is_standalone_instance = True
@@ -448,14 +468,7 @@ class Reticulum:
             if "interfaces" in self.config:
                 for name in self.config["interfaces"]:
                     if not name in interface_names:
-                        # TODO: We really need to generalise this way of instantiating
-                        # and configuring interfaces. Ideally, interfaces should just
-                        # have a conrfig dict passed to their init method, and return
-                        # a ready interface, onto which this routine can configure any
-                        # generic or extra parameters.
-
                         c = self.config["interfaces"][name]
-
                         interface_mode = Interface.Interface.MODE_FULL
                         
                         if "interface_mode" in c:
@@ -558,516 +571,23 @@ class Reticulum:
                                 announce_cap = c.as_float("announce_cap")/100.0
                                 
                         try:
-                            interface = None
-
-                            if (("interface_enabled" in c) and c.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
-                                if c["type"] == "AutoInterface":
-                                    group_id        = c["group_id"] if "group_id" in c else None
-                                    discovery_scope = c["discovery_scope"] if "discovery_scope" in c else None
-                                    discovery_port  = int(c["discovery_port"]) if "discovery_port" in c else None
-                                    multicast_address_type = c["multicast_address_type"] if "multicast_address_type" in c else None
-                                    data_port  = int(c["data_port"]) if "data_port" in c else None
-                                    allowed_interfaces = c.as_list("devices") if "devices" in c else None
-                                    ignored_interfaces = c.as_list("ignored_devices") if "ignored_devices" in c else None
-
-                                    interface = AutoInterface.AutoInterface(
-                                        RNS.Transport,
-                                        name,
-                                        group_id,
-                                        discovery_scope,
-                                        discovery_port,
-                                        multicast_address_type,
-                                        data_port,
-                                        allowed_interfaces,
-                                        ignored_interfaces
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 16
-
-                                if c["type"] == "UDPInterface":
-                                    device       = c["device"] if "device" in c else None
-                                    port         = int(c["port"]) if "port" in c else None
-                                    listen_ip    = c["listen_ip"] if "listen_ip" in c else None
-                                    listen_port  = int(c["listen_port"]) if "listen_port" in c else None
-                                    forward_ip   = c["forward_ip"] if "forward_ip" in c else None
-                                    forward_port = int(c["forward_port"]) if "forward_port" in c else None
-
-                                    if port != None:
-                                        if listen_port == None:
-                                            listen_port = port
-                                        if forward_port == None:
-                                            forward_port = port
-
-                                    interface = UDPInterface.UDPInterface(
-                                        RNS.Transport,
-                                        name,
-                                        device,
-                                        listen_ip,
-                                        listen_port,
-                                        forward_ip,
-                                        forward_port
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 16
-
-                                if c["type"] == "TCPServerInterface":
-                                    device       = c["device"] if "device" in c else None
-                                    port         = int(c["port"]) if "port" in c else None
-                                    listen_ip    = c["listen_ip"] if "listen_ip" in c else None
-                                    listen_port  = int(c["listen_port"]) if "listen_port" in c else None
-                                    i2p_tunneled = c.as_bool("i2p_tunneled") if "i2p_tunneled" in c else False
-
-                                    if port != None:
-                                        listen_port = port
-
-                                    interface = TCPInterface.TCPServerInterface(
-                                        RNS.Transport,
-                                        name,
-                                        device,
-                                        listen_ip,
-                                        listen_port,
-                                        i2p_tunneled
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
-                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
-                                        interface_mode = Interface.Interface.MODE_FULL
-                                    
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 16
-
-                                if c["type"] == "TCPClientInterface":
-                                    kiss_framing = False
-                                    if "kiss_framing" in c and c.as_bool("kiss_framing") == True:
-                                        kiss_framing = True
-                                    i2p_tunneled = c.as_bool("i2p_tunneled") if "i2p_tunneled" in c else False
-                                    tcp_connect_timeout = c.as_int("connect_timeout") if "connect_timeout" in c else None
-
-
-                                    interface = TCPInterface.TCPClientInterface(
-                                        RNS.Transport,
-                                        name,
-                                        c["target_host"],
-                                        int(c["target_port"]),
-                                        kiss_framing = kiss_framing,
-                                        i2p_tunneled = i2p_tunneled,
-                                        connect_timeout = tcp_connect_timeout,
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
-                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
-                                        interface_mode = Interface.Interface.MODE_FULL
-                                    
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 16
-
-                                if c["type"] == "I2PInterface":
-                                    i2p_peers = c.as_list("peers") if "peers" in c else None
-                                    connectable = c.as_bool("connectable") if "connectable" in c else False
-
-                                    if ifac_size == None:
-                                        ifac_size = 16
-
-                                    interface = I2PInterface.I2PInterface(
-                                        RNS.Transport,
-                                        name,
-                                        Reticulum.storagepath,
-                                        i2p_peers,
-                                        connectable = connectable,
-                                        ifac_size = ifac_size,
-                                        ifac_netname = ifac_netname,
-                                        ifac_netkey = ifac_netkey,
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
-                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
-                                        interface_mode = Interface.Interface.MODE_FULL
-                                    
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-
-                                if c["type"] == "SerialInterface":
-                                    port = c["port"] if "port" in c else None
-                                    speed = int(c["speed"]) if "speed" in c else 9600
-                                    databits = int(c["databits"]) if "databits" in c else 8
-                                    parity = c["parity"] if "parity" in c else "N"
-                                    stopbits = int(c["stopbits"]) if "stopbits" in c else 1
-
-                                    if port == None:
-                                        raise ValueError("No port specified for serial interface")
-
-                                    interface = SerialInterface.SerialInterface(
-                                        RNS.Transport,
-                                        name,
-                                        port,
-                                        speed,
-                                        databits,
-                                        parity,
-                                        stopbits
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 8
-
-                                if c["type"] == "PipeInterface":
-                                    command = c["command"] if "command" in c else None
-                                    respawn_delay = c.as_float("respawn_delay") if "respawn_delay" in c else None
-
-                                    if command == None:
-                                        raise ValueError("No command specified for PipeInterface")
-
-                                    interface = PipeInterface.PipeInterface(
-                                        RNS.Transport,
-                                        name,
-                                        command,
-                                        respawn_delay,
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 8
-
-                                if c["type"] == "KISSInterface":
-                                    preamble = int(c["preamble"]) if "preamble" in c else None
-                                    txtail = int(c["txtail"]) if "txtail" in c else None
-                                    persistence = int(c["persistence"]) if "persistence" in c else None
-                                    slottime = int(c["slottime"]) if "slottime" in c else None
-                                    flow_control = c.as_bool("flow_control") if "flow_control" in c else False
-                                    port = c["port"] if "port" in c else None
-                                    speed = int(c["speed"]) if "speed" in c else 9600
-                                    databits = int(c["databits"]) if "databits" in c else 8
-                                    parity = c["parity"] if "parity" in c else "N"
-                                    stopbits = int(c["stopbits"]) if "stopbits" in c else 1
-                                    beacon_interval = int(c["id_interval"]) if "id_interval" in c else None
-                                    beacon_data = c["id_callsign"] if "id_callsign" in c else None
-
-                                    if port == None:
-                                        raise ValueError("No port specified for serial interface")
-
-                                    interface = KISSInterface.KISSInterface(
-                                        RNS.Transport,
-                                        name,
-                                        port,
-                                        speed,
-                                        databits,
-                                        parity,
-                                        stopbits,
-                                        preamble,
-                                        txtail,
-                                        persistence,
-                                        slottime,
-                                        flow_control,
-                                        beacon_interval,
-                                        beacon_data
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 8
-
-                                if c["type"] == "AX25KISSInterface":
-                                    preamble = int(c["preamble"]) if "preamble" in c else None
-                                    txtail = int(c["txtail"]) if "txtail" in c else None
-                                    persistence = int(c["persistence"]) if "persistence" in c else None
-                                    slottime = int(c["slottime"]) if "slottime" in c else None
-                                    flow_control = c.as_bool("flow_control") if "flow_control" in c else False
-                                    port = c["port"] if "port" in c else None
-                                    speed = int(c["speed"]) if "speed" in c else 9600
-                                    databits = int(c["databits"]) if "databits" in c else 8
-                                    parity = c["parity"] if "parity" in c else "N"
-                                    stopbits = int(c["stopbits"]) if "stopbits" in c else 1
-
-                                    callsign = c["callsign"] if "callsign" in c else ""
-                                    ssid = int(c["ssid"]) if "ssid" in c else -1
-
-                                    if port == None:
-                                        raise ValueError("No port specified for serial interface")
-
-                                    interface = AX25KISSInterface.AX25KISSInterface(
-                                        RNS.Transport,
-                                        name,
-                                        callsign,
-                                        ssid,
-                                        port,
-                                        speed,
-                                        databits,
-                                        parity,
-                                        stopbits,
-                                        preamble,
-                                        txtail,
-                                        persistence,
-                                        slottime,
-                                        flow_control
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 8
-
-                                if c["type"] == "RNodeInterface":
-                                    frequency = int(c["frequency"]) if "frequency" in c else None
-                                    bandwidth = int(c["bandwidth"]) if "bandwidth" in c else None
-                                    txpower = int(c["txpower"]) if "txpower" in c else None
-                                    spreadingfactor = int(c["spreadingfactor"]) if "spreadingfactor" in c else None
-                                    codingrate = int(c["codingrate"]) if "codingrate" in c else None
-                                    flow_control = c.as_bool("flow_control") if "flow_control" in c else False
-                                    id_interval = int(c["id_interval"]) if "id_interval" in c else None
-                                    id_callsign = c["id_callsign"] if "id_callsign" in c else None
-                                    st_alock = float(c["airtime_limit_short"]) if "airtime_limit_short" in c else None
-                                    lt_alock = float(c["airtime_limit_long"]) if "airtime_limit_long" in c else None
-
-                                    force_ble = False
-                                    ble_name = None
-                                    ble_addr = None
-
-                                    port = c["port"] if "port" in c else None
-
-                                    if port == None:
-                                        raise ValueError("No port specified for RNode interface")
-
-                                    if port != None:
-                                        ble_uri_scheme = "ble://"
-                                        if port.lower().startswith(ble_uri_scheme):
-                                            force_ble = True
-                                            ble_string = port[len(ble_uri_scheme):]
-                                            port = None
-                                            if len(ble_string) == 0:
-                                                pass
-                                            elif len(ble_string.split(":")) == 6 and len(ble_string) == 17:
-                                                ble_addr = ble_string
-                                            else:
-                                                ble_name = ble_string
-                                    
-                                    interface = RNodeInterface.RNodeInterface(
-                                        RNS.Transport,
-                                        name,
-                                        port,
-                                        frequency = frequency,
-                                        bandwidth = bandwidth,
-                                        txpower = txpower,
-                                        sf = spreadingfactor,
-                                        cr = codingrate,
-                                        flow_control = flow_control,
-                                        id_interval = id_interval,
-                                        id_callsign = id_callsign,
-                                        st_alock = st_alock,
-                                        lt_alock = lt_alock,
-                                        ble_addr = ble_addr,
-                                        ble_name = ble_name,
-                                        force_ble = force_ble,
-                                    )
-
-                                    if "outgoing" in c and c.as_bool("outgoing") == False:
-                                        interface.OUT = False
-                                    else:
-                                        interface.OUT = True
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 8
-
-                                if c["type"] == "RNodeMultiInterface":
-                                    count = 0
-                                    enabled_count = 0
-
-                                    # Count how many interfaces are in the file
-                                    for subinterface in c:
-                                        # if the retrieved entry is not a string, it must be a dictionary, which is what we want
-                                        if not isinstance(c[subinterface], str):
-                                            count += 1
-
-                                    # Count how many interfaces are enabled to allow for appropriate matrix sizing
-                                    for subinterface in c:
-                                        # if the retrieved entry is not a string, it must be a dictionary, which is what we want
-                                        if not isinstance(c[subinterface], str):
-                                            subinterface_config = self.config["interfaces"][name][subinterface]
-                                            if (("interface_enabled" in subinterface_config) and subinterface_config.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
-                                                enabled_count += 1
-
-                                    # Create an array with a row for each subinterface
-                                    subint_config = [[0 for x in range(11)] for y in range(enabled_count)]
-                                    subint_index = 0
-
-                                    for subinterface in c:
-                                        # If the retrieved entry is not a string, it must be a dictionary, which is what we want
-                                        if not isinstance(c[subinterface], str):
-                                            subinterface_config = self.config["interfaces"][name][subinterface]
-                                            if (("interface_enabled" in subinterface_config) and subinterface_config.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
-                                                subint_config[subint_index][0] = subinterface
-
-                                                subint_vport = subinterface_config["vport"] if "vport" in subinterface_config else None
-                                                subint_config[subint_index][1] = subint_vport
-
-                                                frequency = int(subinterface_config["frequency"]) if "frequency" in subinterface_config else None
-                                                subint_config[subint_index][2] = frequency
-                                                bandwidth = int(subinterface_config["bandwidth"]) if "bandwidth" in subinterface_config else None
-                                                subint_config[subint_index][3] = bandwidth
-                                                txpower = int(subinterface_config["txpower"]) if "txpower" in subinterface_config else None
-                                                subint_config[subint_index][4] = txpower
-                                                spreadingfactor = int(subinterface_config["spreadingfactor"]) if "spreadingfactor" in subinterface_config else None
-                                                subint_config[subint_index][5] = spreadingfactor 
-                                                codingrate = int(subinterface_config["codingrate"]) if "codingrate" in subinterface_config else None
-                                                subint_config[subint_index][6] = codingrate
-                                                flow_control = subinterface_config.as_bool("flow_control") if "flow_control" in subinterface_config else False
-                                                subint_config[subint_index][7] = flow_control 
-                                                st_alock = float(subinterface_config["airtime_limit_short"]) if "airtime_limit_short" in subinterface_config else None
-                                                subint_config[subint_index][8] = st_alock
-                                                lt_alock = float(subinterface_config["airtime_limit_long"]) if "airtime_limit_long" in subinterface_config else None
-                                                subint_config[subint_index][9] = lt_alock
-
-                                                if "outgoing" in subinterface_config and subinterface_config.as_bool("outgoing") == False:
-                                                    subint_config[subint_index][10] = False
-                                                else:
-                                                    subint_config[subint_index][10] = True
-                                                subint_index += 1
-
-                                    # if no subinterfaces are defined
-                                    if count == 0:
-                                        raise ValueError("No subinterfaces configured for "+name)
-                                    # if no subinterfaces are enabled
-                                    elif enabled_count == 0:
-                                        raise ValueError("No subinterfaces enabled for "+name)
-
-                                    id_interval = int(c["id_interval"]) if "id_interval" in c else None
-                                    id_callsign = c["id_callsign"] if "id_callsign" in c else None
-                                    port = c["port"] if "port" in c else None
-                                    
-                                    if port == None:
-                                        raise ValueError("No port specified for "+name)
-
-
-                                    interface = RNodeMultiInterface.RNodeMultiInterface(
-                                        RNS.Transport,
-                                        name,
-                                        port,
-                                        subint_config,
-                                        id_interval = id_interval,
-                                        id_callsign = id_callsign
-                                    )
-
-                                    interface.IN = False
-                                    interface.OUT = False
-
-                                    interface.mode = interface_mode
-
-                                    interface.announce_cap = announce_cap
-                                    if configured_bitrate:
-                                        interface.bitrate = configured_bitrate
-                                    if ifac_size != None:
-                                        interface.ifac_size = ifac_size
-                                    else:
-                                        interface.ifac_size = 8
-
+                            def interface_post_init(interface):
+>>>>>>> upstream/master
                                 if interface != None:
+                                    if "outgoing" in c and c.as_bool("outgoing") == False:
+                                        interface.OUT = False
+                                    else:
+                                        interface.OUT = True
+
+                                    interface.mode = interface_mode
+                                    interface.announce_cap = announce_cap
+                                    if configured_bitrate:
+                                        interface.bitrate = configured_bitrate
+                                    if ifac_size != None:
+                                        interface.ifac_size = ifac_size
+                                    else:
+                                        interface.ifac_size = interface.DEFAULT_IFAC_SIZE
+
                                     interface.announce_rate_target = announce_rate_target
                                     interface.announce_rate_grace = announce_rate_grace
                                     interface.announce_rate_penalty = announce_rate_penalty
@@ -1108,8 +628,102 @@ class Reticulum:
 
                                     RNS.Transport.interfaces.append(interface)
 
-                                    if isinstance(interface, RNS.Interfaces.RNodeMultiInterface.RNodeMultiInterface):
-                                        interface.start()
+                            interface = None
+                            if (("interface_enabled" in c) and c.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
+                                interface_config = c
+                                interface_config["name"] = name
+                                interface_config["selected_interface_mode"] = interface_mode
+                                interface_config["configured_bitrate"] = configured_bitrate
+
+                                if c["type"] == "AutoInterface":
+                                    interface = AutoInterface.AutoInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "UDPInterface":
+                                    interface = UDPInterface.UDPInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "TCPServerInterface":
+                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
+                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
+                                        interface_mode = Interface.Interface.MODE_FULL
+
+                                    interface = TCPInterface.TCPServerInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "TCPClientInterface":
+                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
+                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
+                                        interface_mode = Interface.Interface.MODE_FULL
+                                    
+                                    interface = TCPInterface.TCPClientInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "I2PInterface":
+                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
+                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
+                                        interface_mode = Interface.Interface.MODE_FULL
+
+                                    interface_config["storagepath"] = Reticulum.storagepath
+                                    interface_config["ifac_netname"] = ifac_netname
+                                    interface_config["ifac_netkey"] = ifac_netkey
+                                    interface_config["ifac_size"] = ifac_size
+
+                                    interface = I2PInterface.I2PInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "SerialInterface":
+                                    interface = SerialInterface.SerialInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "PipeInterface":
+                                    interface = PipeInterface.PipeInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "KISSInterface":
+                                    interface = KISSInterface.KISSInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "AX25KISSInterface":
+                                    interface = AX25KISSInterface.AX25KISSInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "RNodeInterface":
+                                    interface = RNodeInterface.RNodeInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "RNodeMultiInterface":
+                                    interface = RNodeMultiInterface.RNodeMultiInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+                                    interface.start()
+
+                                if interface == None:
+                                    # Interface was not handled by any internal interface types,
+                                    # attempt to load and initialise it from user-supplied modules
+                                    interface_type = c["type"]
+                                    interface_file = f"{interface_type}.py"
+                                    interface_path = os.path.join(self.interfacepath, interface_file)
+                                    if not os.path.isfile(interface_path):
+                                        RNS.log(f"Could not locate external interface module \"{interface_file}\" in \"{self.interfacepath}\"", RNS.LOG_ERROR)
+                                    
+                                    else:
+                                        try:
+                                            RNS.log(f"Loading external interface \"{interface_file}\" from \"{self.interfacepath}\"", RNS.LOG_NOTICE)
+                                            interface_globals = {}
+                                            interface_globals["Interface"] = Interface.Interface
+                                            interface_globals["RNS"] = RNS
+                                            with open(interface_path) as class_file:
+                                                interface_code = class_file.read()
+                                                exec(interface_code, interface_globals)
+                                                interface_class = interface_globals["interface_class"]
+                                                
+                                                if interface_class != None:
+                                                    interface = interface_class(RNS.Transport, interface_config)
+                                                    interface_post_init(interface)
+
+                                        except Exception as e:
+                                            RNS.log(f"External interface initialisation failed for {interface_type} / {name}", RNS.LOG_ERROR)
+                                            RNS.trace_exception(e)
 
                             else:
                                 RNS.log("Skipping disabled interface \""+name+"\"", RNS.LOG_DEBUG)
@@ -1124,7 +738,7 @@ class Reticulum:
 
             RNS.log("System interfaces are ready", RNS.LOG_VERBOSE)
 
-    def _add_interface(self,interface, mode = None, configured_bitrate=None, ifac_size=None, ifac_netname=None, ifac_netkey=None, announce_cap=None, announce_rate_target=None, announce_rate_grace=None, announce_rate_penalty=None):
+    def _add_interface(self, interface, mode = None, configured_bitrate=None, ifac_size=None, ifac_netname=None, ifac_netkey=None, announce_cap=None, announce_rate_target=None, announce_rate_grace=None, announce_rate_penalty=None):
         if not self.is_connected_to_shared_instance:
             if interface != None and issubclass(type(interface), RNS.Interfaces.Interface.Interface):
                 
@@ -1569,6 +1183,14 @@ class Reticulum:
 
             return None
 
+    def halt_interface(self, interface):
+        pass
+
+    def resume_interface(self, interface):
+        pass
+
+    def reload_interface(self, interface):
+        pass
 
     @staticmethod
     def should_use_implicit_proof():

@@ -402,12 +402,81 @@ class RNodeMultiInterface(Interface):
             if port != None:
                 serial.close()
 
+# name, port, subint_config, flow_control = False, id_interval = None, allow_bluetooth = False, target_device_name = None, target_device_address = None, id_callsign = None, st_alock = None, lt_alock = None, ble_addr = None, ble_name = None, force_ble = False
+    def __init__(self, owner, configuration):
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        allow_bluetooth = c.as_bool("allow_bluetooth") if "allow_bluetooth" in c else False
+        target_device_name = c["target_device_name"] if "target_device_name" in c else None
+        target_device_address = c["target_device_address"] if "target_device_address" in c else None
+        ble_name = c["ble_name"] if "ble_name" in c else None
+        ble_addr = c["ble_addr"] if "ble_addr" in c else None
+        force_ble = c["force_ble"] if "force_ble" in c else False
+        flow_control = c.as_bool("flow_control") if "flow_control" in c else False
+        id_interval = int(c["id_interval"]) if "id_interval" in c and c["id_interval"] != None else None
+        id_callsign = c["id_callsign"] if "id_callsign" in c else None
+        st_alock = float(c["airtime_limit_short"]) if "airtime_limit_short" in c and c["airtime_limit_short"] != None else None
+        lt_alock = float(c["airtime_limit_long"]) if "airtime_limit_long" in c and c["airtime_limit_long"] != None else None
+        port = c["port"] if "port" in c else None
 
-    def __init__(
-        self, owner, name, port, subint_config, flow_control = False, id_interval = None,
-        allow_bluetooth = False, target_device_name = None,
-        target_device_address = None, id_callsign = None, st_alock = None, lt_alock = None,
-        ble_addr = None, ble_name = None, force_ble = False):
+        count = 0
+        enabled_count = 0
+
+        # Count how many interfaces are in the file
+        for subinterface in c:
+            if isinstance(c[subinterface], dict):
+                count += 1
+
+        # Count how many interfaces are enabled to allow for appropriate matrix sizing
+        for subinterface in c:
+            if isinstance(c[subinterface], dict):
+                subinterface_config = c[subinterface]
+                if (("interface_enabled" in subinterface_config) and subinterface_config.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
+                    enabled_count += 1
+
+        # Create an array with a row for each subinterface
+        subint_config = [[0 for x in range(11)] for y in range(enabled_count)]
+        subint_index = 0
+
+        for subinterface in c:
+            if isinstance(c[subinterface], dict):
+                subinterface_config = c[subinterface]
+                if (("interface_enabled" in subinterface_config) and subinterface_config.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
+                    subint_config[subint_index][0] = subinterface
+
+                    subint_vport = subinterface_config["vport"] if "vport" in subinterface_config else None
+                    subint_config[subint_index][1] = subint_vport
+
+                    frequency = int(subinterface_config["frequency"]) if "frequency" in subinterface_config else None
+                    subint_config[subint_index][2] = frequency
+                    bandwidth = int(subinterface_config["bandwidth"]) if "bandwidth" in subinterface_config else None
+                    subint_config[subint_index][3] = bandwidth
+                    txpower = int(subinterface_config["txpower"]) if "txpower" in subinterface_config else None
+                    subint_config[subint_index][4] = txpower
+                    spreadingfactor = int(subinterface_config["spreadingfactor"]) if "spreadingfactor" in subinterface_config else None
+                    subint_config[subint_index][5] = spreadingfactor
+                    codingrate = int(subinterface_config["codingrate"]) if "codingrate" in subinterface_config else None
+                    subint_config[subint_index][6] = codingrate
+                    flow_control = subinterface_config.as_bool("flow_control") if "flow_control" in subinterface_config else False
+                    subint_config[subint_index][7] = flow_control 
+                    st_alock = float(subinterface_config["airtime_limit_short"]) if "airtime_limit_short" in subinterface_config else None
+                    subint_config[subint_index][8] = st_alock
+                    lt_alock = float(subinterface_config["airtime_limit_long"]) if "airtime_limit_long" in subinterface_config else None
+                    subint_config[subint_index][9] = lt_alock
+
+                    if "outgoing" in subinterface_config and subinterface_config.as_bool("outgoing") == False:
+                        subint_config[subint_index][10] = False
+                    else:
+                        subint_config[subint_index][10] = True
+                    subint_index += 1
+
+        # if no subinterfaces are defined
+        if count == 0:
+            raise ValueError("No subinterfaces configured for "+name)
+        # if no subinterfaces are enabled
+        elif enabled_count == 0:
+            raise ValueError("No subinterfaces enabled for "+name)
+
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True

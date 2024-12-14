@@ -42,6 +42,7 @@ class HDLC():
 
 class SerialInterface(Interface):
     MAX_CHUNK = 32768
+    DEFAULT_IFAC_SIZE = 8
 
     owner    = None
     port     = None
@@ -51,7 +52,7 @@ class SerialInterface(Interface):
     stopbits = None
     serial   = None
 
-    def __init__(self, owner, name, port, speed, databits, parity, stopbits):
+    def __init__(self, owner, configuration):
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
@@ -73,6 +74,17 @@ class SerialInterface(Interface):
             raise SystemError("Android-specific interface was used on non-Android OS")
 
         super().__init__()
+
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        port = c["port"] if "port" in c else None
+        speed = int(c["speed"]) if "speed" in c else 9600
+        databits = int(c["databits"]) if "databits" in c else 8
+        parity = c["parity"] if "parity" in c else "N"
+        stopbits = int(c["stopbits"]) if "stopbits" in c else 1
+
+        if port == None:
+            raise ValueError("No port specified for serial interface")
 
         self.HW_MTU = 564
         
@@ -172,13 +184,13 @@ class SerialInterface(Interface):
         RNS.log("Serial port "+self.port+" is now open", RNS.LOG_VERBOSE)
 
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         def af():
             self.owner.inbound(data, self)
         threading.Thread(target=af, daemon=True).start()
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         if self.online:
             data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
             written = self.serial.write(data)
@@ -202,7 +214,7 @@ class SerialInterface(Interface):
 
                     if (in_frame and byte == HDLC.FLAG):
                         in_frame = False
-                        self.processIncoming(data_buffer)
+                        self.process_incoming(data_buffer)
                     elif (byte == HDLC.FLAG):
                         in_frame = True
                         data_buffer = b""

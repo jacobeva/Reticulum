@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2016-2022 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2024 Mark Qvist / unsigned.io
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .Interface import Interface
+from RNS.Interfaces.Interface import Interface
 import socketserver
 import threading
 import platform
@@ -58,8 +58,12 @@ class KISS():
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     pass
 
+class ThreadingTCP6Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    address_family = socket.AF_INET6
+
 class TCPClientInterface(Interface):
     BITRATE_GUESS = 10*1000*1000
+    DEFAULT_IFAC_SIZE = 16
 
     RECONNECT_WAIT = 5
     RECONNECT_MAX_TRIES = None
@@ -78,8 +82,19 @@ class TCPClientInterface(Interface):
     I2P_PROBE_INTERVAL = 9
     I2P_PROBES = 5
 
-    def __init__(self, owner, name, target_ip=None, target_port=None, connected_socket=None, max_reconnect_tries=None, kiss_framing=False, i2p_tunneled = False, connect_timeout = None):
+    def __init__(self, owner, configuration, connected_socket=None):
         super().__init__()
+
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        target_ip = c["target_host"] if "target_host" in c and c["target_host"] != None else None
+        target_port = int(c["target_port"]) if "target_port" in c and c["target_host"] != None else None
+        kiss_framing = False
+        if "kiss_framing" in c and c.as_bool("kiss_framing") == True:
+            kiss_framing = True
+        i2p_tunneled = c.as_bool("i2p_tunneled") if "i2p_tunneled" in c else False
+        connect_timeout = c.as_int("connect_timeout") if "connect_timeout" in c else None
+        max_reconnect_tries = c.as_int("max_reconnect_tries") if "max_reconnect_tries" in c else None
         
         self.HW_MTU = 1064
         
@@ -200,10 +215,14 @@ class TCPClientInterface(Interface):
             if initial:
                 RNS.log("Establishing TCP connection for "+str(self)+"...", RNS.LOG_DEBUG)
 
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            address_info = socket.getaddrinfo(self.target_ip, self.target_port, proto=socket.IPPROTO_TCP)[0]
+            address_family = address_info[0]
+            target_address = address_info[4]
+
+            self.socket = socket.socket(address_family, socket.SOCK_STREAM)
             self.socket.settimeout(TCPClientInterface.INITIAL_CONNECT_TIMEOUT)
             self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            self.socket.connect((self.target_ip, self.target_port))
+            self.socket.connect(target_address)
             self.socket.settimeout(None)
             self.online  = True
 
@@ -265,14 +284,14 @@ class TCPClientInterface(Interface):
             RNS.log("Attempt to reconnect on a non-initiator TCP interface. This should not happen.", RNS.LOG_ERROR)
             raise IOError("Attempt to reconnect on a non-initiator TCP interface")
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         if hasattr(self, "parent_interface") and self.parent_interface != None:
             self.parent_interface.rxb += len(data)
                     
         self.owner.inbound(data, self)
 
-    def processOutgoing(self, data):
+    def process_outgoing(self, data):
         if self.online:
             # while self.writing:
             #     time.sleep(0.01)
@@ -316,7 +335,7 @@ class TCPClientInterface(Interface):
                             # Read loop for KISS framing
                             if (in_frame and byte == KISS.FEND and command == KISS.CMD_DATA):
                                 in_frame = False
-                                self.processIncoming(data_buffer)
+                                self.process_incoming(data_buffer)
                             elif (byte == KISS.FEND):
                                 in_frame = True
                                 command = KISS.CMD_UNKNOWN
@@ -343,7 +362,7 @@ class TCPClientInterface(Interface):
                             # Read loop for HDLC framing
                             if (in_frame and byte == HDLC.FLAG):
                                 in_frame = False
-                                self.processIncoming(data_buffer)
+                                self.process_incoming(data_buffer)
                             elif (byte == HDLC.FLAG):
                                 in_frame = True
                                 data_buffer = b""
@@ -394,7 +413,8 @@ class TCPClientInterface(Interface):
         self.IN = False
 
         if hasattr(self, "parent_interface") and self.parent_interface != None:
-            self.parent_interface.clients -= 1
+            while self in self.parent_interface.spawned_interfaces:
+                self.parent_interface.spawned_interfaces.remove(self)
 
         if self in RNS.Transport.interfaces:
             if not self.initiator:
@@ -402,31 +422,72 @@ class TCPClientInterface(Interface):
 
 
     def __str__(self):
-        return "TCPInterface["+str(self.name)+"/"+str(self.target_ip)+":"+str(self.target_port)+"]"
+        if ":" in self.target_ip:
+            ip_str = f"[{self.target_ip}]"
+        else:
+            ip_str = f"{self.target_ip}"
+
+        return "TCPInterface["+str(self.name)+"/"+ip_str+":"+str(self.target_port)+"]"
 
 
 class TCPServerInterface(Interface):
     BITRATE_GUESS      = 10*1000*1000
+    DEFAULT_IFAC_SIZE = 16
 
     @staticmethod
-    def get_address_for_if(name):
+    def get_address_for_if(name, bind_port, prefer_ipv6=False):
         import RNS.vendor.ifaddr.niwrapper as netinfo
         ifaddr = netinfo.ifaddresses(name)
-        return ifaddr[netinfo.AF_INET][0]["addr"]
+        if len(ifaddr) < 1:
+            raise SystemError(f"No addresses available on specified kernel interface \"{name}\" for TCPServerInterface to bind to")
+
+        if (prefer_ipv6 or not netinfo.AF_INET in ifaddr) and netinfo.AF_INET6 in ifaddr:
+            bind_ip = ifaddr[netinfo.AF_INET6][0]["addr"]
+            if bind_ip.lower().startswith("fe80::"):
+                # We'll need to add the interface as scope for link-local addresses
+                return TCPServerInterface.get_address_for_host(f"{bind_ip}%{name}", bind_port)
+            else:
+                return TCPServerInterface.get_address_for_host(bind_ip, bind_port)
+        elif netinfo.AF_INET in ifaddr:
+            bind_ip = ifaddr[netinfo.AF_INET][0]["addr"]
+            return (bind_ip, bind_port)
+        else:
+            raise SystemError(f"No addresses available on specified kernel interface \"{name}\" for TCPServerInterface to bind to")
 
     @staticmethod
-    def get_broadcast_for_if(name):
-        import RNS.vendor.ifaddr.niwrapper as netinfo
-        ifaddr = netinfo.ifaddresses(name)
-        return ifaddr[netinfo.AF_INET][0]["broadcast"]
+    def get_address_for_host(name, bind_port):
+        address_info = socket.getaddrinfo(name, bind_port, proto=socket.IPPROTO_TCP)[0]
+        if address_info[0] == socket.AF_INET6:
+            return (name, bind_port, address_info[4][2], address_info[4][3])
+        elif address_info[0] == socket.AF_INET:
+            return (name, bind_port)
+        else:
+            raise SystemError(f"No suitable kernel interface available for address \"{name}\" for TCPServerInterface to bind to")
 
-    def __init__(self, owner, name, device=None, bindip=None, bindport=None, i2p_tunneled=False):
+
+    @property
+    def clients(self):
+        return len(self.spawned_interfaces)
+
+    def __init__(self, owner, configuration):
         super().__init__()
+
+        c            = Interface.get_config_obj(configuration)
+        name         = c["name"]
+        device       = c["device"] if "device" in c else None
+        port         = int(c["port"]) if "port" in c else None
+        bindip       = c["listen_ip"] if "listen_ip" in c else None
+        bindport     = int(c["listen_port"]) if "listen_port" in c else None
+        i2p_tunneled = c.as_bool("i2p_tunneled") if "i2p_tunneled" in c else False
+        prefer_ipv6  = c.as_bool("prefer_ipv6") if "prefer_ipv6" in c else False
+
+        if port != None:
+            bindport = port
 
         self.HW_MTU = 1064
 
         self.online = False
-        self.clients = 0
+        self.spawned_interfaces = []
         
         self.IN  = True
         self.OUT = False
@@ -436,13 +497,22 @@ class TCPServerInterface(Interface):
         self.i2p_tunneled = i2p_tunneled
         self.mode         = RNS.Interfaces.Interface.Interface.MODE_FULL
 
-        if device != None:
-            bindip = TCPServerInterface.get_address_for_if(device)
-
-        if (bindip != None and bindport != None):
-            self.receives = True
-            self.bind_ip = bindip
+        if bindport == None:
+            raise SystemError(f"No TCP port configured for interface \"{name}\"")
+        else:
             self.bind_port = bindport
+
+        bind_address = None
+        if device != None:
+            bind_address = TCPServerInterface.get_address_for_if(device, self.bind_port, prefer_ipv6)
+        else:
+            if bindip == None:
+                raise SystemError(f"No TCP bind IP configured for interface \"{name}\"")
+            bind_address = TCPServerInterface.get_address_for_host(bindip, self.bind_port)
+
+        if bind_address != None:
+            self.receives = True
+            self.bind_ip = bind_address[0]
 
             def handlerFactory(callback):
                 def createHandler(*args, **keys):
@@ -450,10 +520,17 @@ class TCPServerInterface(Interface):
                 return createHandler
 
             self.owner = owner
-            address = (self.bind_ip, self.bind_port)
 
-            ThreadingTCPServer.allow_reuse_address = True
-            self.server = ThreadingTCPServer(address, handlerFactory(self.incoming_connection))
+            if len(bind_address) == 4:
+                try:
+                    ThreadingTCP6Server.allow_reuse_address = True
+                    self.server = ThreadingTCP6Server(bind_address, handlerFactory(self.incoming_connection))
+                except Exception as e:
+                    RNS.log(f"Error while binding IPv6 socket for interface, the contained exception was: {e}", RNS.LOG_ERROR)
+                    raise SystemError("Could not bind IPv6 socket for interface. Please check the specified \"listen_ip\" configuration option")
+            else:
+                ThreadingTCPServer.allow_reuse_address = True
+                self.server = ThreadingTCPServer(bind_address, handlerFactory(self.incoming_connection))
 
             self.bitrate = TCPServerInterface.BITRATE_GUESS
 
@@ -463,11 +540,13 @@ class TCPServerInterface(Interface):
 
             self.online = True
 
+        else:
+            raise SystemError("Insufficient parameters to create TCP listener")
 
     def incoming_connection(self, handler):
         RNS.log("Accepting incoming TCP connection", RNS.LOG_VERBOSE)
-        interface_name = "Client on "+self.name
-        spawned_interface = TCPClientInterface(self.owner, interface_name, target_ip=None, target_port=None, connected_socket=handler.request, i2p_tunneled=self.i2p_tunneled)
+        spawned_configuration = {"name": "Client on "+self.name, "target_host": None, "target_port": None, "i2p_tunneled": self.i2p_tunneled}
+        spawned_interface = TCPClientInterface(self.owner, spawned_configuration, connected_socket=handler.request)
         spawned_interface.OUT = self.OUT
         spawned_interface.IN  = self.IN
         spawned_interface.target_ip = handler.client_address[0]
@@ -503,7 +582,9 @@ class TCPServerInterface(Interface):
         spawned_interface.online = True
         RNS.log("Spawned new TCPClient Interface: "+str(spawned_interface), RNS.LOG_VERBOSE)
         RNS.Transport.interfaces.append(spawned_interface)
-        self.clients += 1
+        while spawned_interface in self.spawned_interfaces:
+            self.spawned_interfaces.remove(spawned_interface)
+        self.spawned_interfaces.append(spawned_interface)
         spawned_interface.read_loop()
 
     def received_announce(self, from_spawned=False):
@@ -512,7 +593,7 @@ class TCPServerInterface(Interface):
     def sent_announce(self, from_spawned=False):
         if from_spawned: self.oa_freq_deque.append(time.time())
 
-    def processOutgoing(self, data):
+    def process_outgoing(self, data):
         pass
 
 
@@ -531,7 +612,12 @@ class TCPServerInterface(Interface):
 
 
     def __str__(self):
-        return "TCPServerInterface["+self.name+"/"+self.bind_ip+":"+str(self.bind_port)+"]"
+        if ":" in self.bind_ip:
+            ip_str = f"[{self.bind_ip}]"
+        else:
+            ip_str = f"{self.bind_ip}"
+
+        return "TCPServerInterface["+self.name+"/"+ip_str+":"+str(self.bind_port)+"]"
 
 
 class TCPInterfaceHandler(socketserver.BaseRequestHandler):

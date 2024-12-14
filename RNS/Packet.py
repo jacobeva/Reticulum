@@ -95,7 +95,7 @@ class Packet:
     # With an MTU of 500, the maximum of data we can
     # send in a single encrypted packet is given by
     # the below calculation; 383 bytes.
-    ENCRYPTED_MDU  = math.floor((RNS.Reticulum.MDU-RNS.Identity.FERNET_OVERHEAD-RNS.Identity.KEYSIZE//16)/RNS.Identity.AES128_BLOCKSIZE)*RNS.Identity.AES128_BLOCKSIZE - 1
+    ENCRYPTED_MDU  = math.floor((RNS.Reticulum.MDU-RNS.Identity.TOKEN_OVERHEAD-RNS.Identity.KEYSIZE//16)/RNS.Identity.AES128_BLOCKSIZE)*RNS.Identity.AES128_BLOCKSIZE - 1
     """
     The maximum size of the payload data in a single encrypted packet 
     """
@@ -501,6 +501,10 @@ class PacketReceipt:
                 return False
         elif len(proof) == PacketReceipt.IMPL_LENGTH:
             # This is an implicit proof
+
+            if not hasattr(self.destination, "identity"):
+                return False
+
             if self.destination.identity == None:
                 return False
 

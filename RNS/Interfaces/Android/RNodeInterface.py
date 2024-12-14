@@ -68,6 +68,7 @@ class KISS():
     CMD_RANDOM      = 0x40
     CMD_FB_EXT      = 0x41
     CMD_FB_READ     = 0x42
+    CMD_DISP_READ   = 0x66
     CMD_FB_WRITE    = 0x43
     CMD_BT_CTRL     = 0x46
     CMD_PLATFORM    = 0x48
@@ -238,6 +239,7 @@ class AndroidBluetoothManager():
 
 class RNodeInterface(Interface):
     MAX_CHUNK = 32768
+    DEFAULT_IFAC_SIZE = 8
 
     FREQ_MIN = 137000000
     FREQ_MAX = 1020000000
@@ -260,6 +262,8 @@ class RNodeInterface(Interface):
     BATTERY_STATE_DISCHARGING = 0x01
     BATTERY_STATE_CHARGING    = 0x02
     BATTERY_STATE_CHARGED     = 0x03
+
+    DISPLAY_READ_INTERVAL     = 1.0
 
     @classmethod
     def bluetooth_control(device_serial = None, port = None, enable_bluetooth = False, disable_bluetooth = False, pairing_mode = False):
@@ -341,12 +345,27 @@ class RNodeInterface(Interface):
                 serial.close()
 
 
-    def __init__(
-        self, owner, name, port, frequency = None, bandwidth = None, txpower = None,
-        sf = None, cr = None, flow_control = False, id_interval = None,
-        allow_bluetooth = False, target_device_name = None,
-        target_device_address = None, id_callsign = None, st_alock = None, lt_alock = None,
-        ble_addr = None, ble_name = None, force_ble=False):
+    def __init__(self, owner, configuration):
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        allow_bluetooth = c.as_bool("allow_bluetooth") if "allow_bluetooth" in c else False
+        target_device_name = c["target_device_name"] if "target_device_name" in c else None
+        target_device_address = c["target_device_address"] if "target_device_address" in c else None
+        ble_name = c["ble_name"] if "ble_name" in c else None
+        ble_addr = c["ble_addr"] if "ble_addr" in c else None
+        force_ble = c["force_ble"] if "force_ble" in c else False
+        frequency = int(c["frequency"]) if "frequency" in c else 0
+        bandwidth = int(c["bandwidth"]) if "bandwidth" in c else 0
+        txpower = int(c["txpower"]) if "txpower" in c else 0
+        sf = int(c["spreadingfactor"]) if "spreadingfactor" in c else 0
+        cr = int(c["codingrate"]) if "codingrate" in c else 0
+        flow_control = c.as_bool("flow_control") if "flow_control" in c else False
+        id_interval = int(c["id_interval"]) if "id_interval" in c and c["id_interval"] != None else None
+        id_callsign = c["id_callsign"] if "id_callsign" in c else None
+        st_alock = float(c["airtime_limit_short"]) if "airtime_limit_short" in c and c["airtime_limit_short"] != None else None
+        lt_alock = float(c["airtime_limit_long"]) if "airtime_limit_long" in c and c["airtime_limit_long"] != None else None
+        port = c["port"] if "port" in c else None
+
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
@@ -452,6 +471,15 @@ class RNodeInterface(Interface):
         self.r_premable_time_ms = None
         self.r_battery_state = RNodeInterface.BATTERY_STATE_UNKNOWN
         self.r_battery_percent = 0
+        self.r_framebuffer = b""
+        self.r_framebuffer_readtime = 0
+        self.r_framebuffer_latency = 0
+        self.r_disp = b""
+        self.r_disp_readtime = 0
+        self.r_disp_latency = 0
+
+        self.should_read_display = False
+        self.read_display_interval = RNodeInterface.DISPLAY_READ_INTERVAL
 
         self.packet_queue    = []
         self.flow_control    = flow_control
@@ -792,6 +820,33 @@ class RNodeInterface(Interface):
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while writing framebuffer data device")
 
+    def read_framebuffer(self):
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_FB_READ])+bytes([0x01])+bytes([KISS.FEND])
+        written = self.serial.write(kiss_command)
+        self.r_framebuffer_readtime = time.time()
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending framebuffer read command")
+
+    def read_display(self):
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_DISP_READ])+bytes([0x01])+bytes([KISS.FEND])
+        written = self.serial.write(kiss_command)
+        self.r_disp_readtime = time.time()
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending display read command")
+
+    def _read_display_job(self):
+        while self.should_read_display:
+            self.read_display()
+            time.sleep(self.read_display_interval)
+
+    def start_display_updates(self):
+        if not self.should_read_display:
+            self.should_read_display = True
+            threading.Thread(target=self._read_display_job, daemon=True).start()
+
+    def stop_display_updates(self):
+        self.should_read_display = False
+
     def hard_reset(self):
         kiss_command = bytes([KISS.FEND, KISS.CMD_RESET, 0xf8, KISS.FEND])
         written = self.write_mux(kiss_command)
@@ -940,7 +995,7 @@ class RNodeInterface(Interface):
         except:
             self.bitrate = 0
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
 
         def af():
@@ -948,7 +1003,7 @@ class RNodeInterface(Interface):
         threading.Thread(target=af, daemon=True).start()
 
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         datalen = len(data)
         if self.online:
             if self.interface_ready:
@@ -979,7 +1034,7 @@ class RNodeInterface(Interface):
         if len(self.packet_queue) > 0:
             data = self.packet_queue.pop(0)
             self.interface_ready = True
-            self.processOutgoing(data)
+            self.process_outgoing(data)
         elif len(self.packet_queue) == 0:
             self.interface_ready = True
 
@@ -1006,7 +1061,7 @@ class RNodeInterface(Interface):
 
                     if (in_frame and byte == KISS.FEND and command == KISS.CMD_DATA):
                         in_frame = False
-                        self.processIncoming(data_buffer)
+                        self.process_incoming(data_buffer)
                         data_buffer = b""
                         command_buffer = b""
                     elif (byte == KISS.FEND):
@@ -1268,6 +1323,37 @@ class RNodeInterface(Interface):
                                         raise IOError("ESP32 reset")
                         elif (command == KISS.CMD_READY):
                             self.process_queue()
+                        
+                        elif (command == KISS.CMD_FB_READ):
+                            if (byte == KISS.FESC):
+                                escape = True
+                            else:
+                                if (escape):
+                                    if (byte == KISS.TFEND):
+                                        byte = KISS.FEND
+                                    if (byte == KISS.TFESC):
+                                        byte = KISS.FESC
+                                    escape = False
+                                command_buffer = command_buffer+bytes([byte])
+                                if (len(command_buffer) == 512):
+                                    self.r_framebuffer_latency = time.time() - self.r_framebuffer_readtime
+                                    self.r_framebuffer = command_buffer
+
+                        elif (command == KISS.CMD_DISP_READ):
+                            if (byte == KISS.FESC):
+                                escape = True
+                            else:
+                                if (escape):
+                                    if (byte == KISS.TFEND):
+                                        byte = KISS.FEND
+                                    if (byte == KISS.TFESC):
+                                        byte = KISS.FESC
+                                    escape = False
+                                command_buffer = command_buffer+bytes([byte])
+                                if (len(command_buffer) == 1024):
+                                    self.r_disp_latency = time.time() - self.r_disp_readtime
+                                    self.r_disp = command_buffer
+                        
                         elif (command == KISS.CMD_DETECT):
                             if byte == KISS.DETECT_RESP:
                                 self.detected = True
@@ -1287,7 +1373,7 @@ class RNodeInterface(Interface):
                         if self.first_tx != None:
                             if time.time() > self.first_tx + self.id_interval:
                                 RNS.log("Interface "+str(self)+" is transmitting beacon data: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
-                                self.processOutgoing(self.id_callsign)
+                                self.process_outgoing(self.id_callsign)
                     
                     if (time.time() - self.last_port_io > self.port_io_timeout):
                         self.detect()

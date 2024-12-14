@@ -52,6 +52,7 @@ class KISS():
 class KISSInterface(Interface):
     MAX_CHUNK = 32768
     BITRATE_GUESS = 1200
+    DEFAULT_IFAC_SIZE = 8
 
     owner    = None
     port     = None
@@ -61,7 +62,7 @@ class KISSInterface(Interface):
     stopbits = None
     serial   = None
 
-    def __init__(self, owner, name, port, speed, databits, parity, stopbits, preamble, txtail, persistence, slottime, flow_control, beacon_interval, beacon_data):
+    def __init__(self, owner, configuration):
         import importlib
         if RNS.vendor.platformutils.is_android():
             self.on_android  = True
@@ -83,6 +84,21 @@ class KISSInterface(Interface):
             raise SystemError("Android-specific interface was used on non-Android OS")
 
         super().__init__()
+
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        preamble = int(c["preamble"]) if "preamble" in c else None
+        txtail = int(c["txtail"]) if "txtail" in c else None
+        persistence = int(c["persistence"]) if "persistence" in c else None
+        slottime = int(c["slottime"]) if "slottime" in c else None
+        flow_control = c.as_bool("flow_control") if "flow_control" in c else False
+        port = c["port"] if "port" in c else None
+        speed = int(c["speed"]) if "speed" in c else 9600
+        databits = int(c["databits"]) if "databits" in c else 8
+        parity = c["parity"] if "parity" in c else "N"
+        stopbits = int(c["stopbits"]) if "stopbits" in c else 1
+        beacon_interval = int(c["beacon_interval"]) if "beacon_interval" in c and c["beacon_interval"] != None else None
+        beacon_data = c["beacon_data"] if "beacon_data" in c else None
         
         self.HW_MTU = 564
         
@@ -267,13 +283,13 @@ class KISSInterface(Interface):
                 raise IOError("Could not enable KISS interface flow control")
 
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         def af():
             self.owner.inbound(data, self)
         threading.Thread(target=af, daemon=True).start()
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         datalen = len(data)
         if self.online:
             if self.interface_ready:
@@ -307,7 +323,7 @@ class KISSInterface(Interface):
         if len(self.packet_queue) > 0:
             data = self.packet_queue.pop(0)
             self.interface_ready = True
-            self.processOutgoing(data)
+            self.process_outgoing(data)
         elif len(self.packet_queue) == 0:
             self.interface_ready = True
 
@@ -328,7 +344,7 @@ class KISSInterface(Interface):
 
                     if (in_frame and byte == KISS.FEND and command == KISS.CMD_DATA):
                         in_frame = False
-                        self.processIncoming(data_buffer)
+                        self.process_incoming(data_buffer)
                     elif (byte == KISS.FEND):
                         in_frame = True
                         command = KISS.CMD_UNKNOWN
@@ -373,7 +389,13 @@ class KISSInterface(Interface):
                             if time.time() > self.first_tx + self.beacon_i:
                                 RNS.log("Interface "+str(self)+" is transmitting beacon data: "+str(self.beacon_d.decode("utf-8")), RNS.LOG_DEBUG)
                                 self.first_tx = None
-                                self.processOutgoing(self.beacon_d)
+
+                                # Pad to minimum length
+                                frame = bytearray(self.beacon_d)
+                                while len(frame) < 15:
+                                    frame.append(0x00)
+
+                                self.process_outgoing(bytes(frame))
 
         except Exception as e:
             self.online = False

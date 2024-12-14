@@ -1,4 +1,4 @@
-Reticulum Network Stack β <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Installs" style="padding-left:10px"/><a href="https://github.com/markqvist/reticulum/actions/workflows/python-app.yml"><img align="right" src="https://github.com/markqvist/reticulum/actions/workflows/python-app.yml/badge.svg"/></a>
+Reticulum Network Stack β <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Installs" style="padding-left:10px"/><a href="https://github.com/markqvist/Reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/markqvist/Reticulum/actions/workflows/build.yml/badge.svg"/></a>
 ==========
 
 <p align="center"><img width="200" src="https://raw.githubusercontent.com/markqvist/Reticulum/master/docs/source/graphics/rns_logo_512.png"></p>
@@ -42,6 +42,9 @@ For more info, see [reticulum.network](https://reticulum.network/) and [the FAQ 
 ## Notable Features
 - Coordination-less globally unique addressing and identification
 - Fully self-configuring multi-hop routing over heterogeneous carriers
+- Flexible scalability over heterogeneous topologies
+  - Reticulum can carry data over any mixture of physical mediums and topologies
+  - Low-bandwidth networks can co-exist and interoperate with large, high-bandwidth networks
 - Initiator anonymity, communicate without revealing your identity
   - Reticulum does not include source addresses on any packets
 - Asymmetric X25519 encryption and Ed25519 signatures as a basis for all communication
@@ -53,8 +56,14 @@ For more info, see [reticulum.network](https://reticulum.network/) and [the FAQ 
   - HMAC using SHA256 for authentication
   - IVs are generated through os.urandom()
 - Unforgeable packet delivery confirmations
-- A large variety of supported interface types
+- Flexible and extensible interface system
+  - Reticulum includes a large variety of built-in interface types
+  - Ability to load and utilise custom user- or community-supplied interface types
+  - Easily create your own custom interfaces for communicating over anything
+- Authentication and virtual network segmentation on all supported interface types
 - An intuitive and easy-to-use API
+  - Simpler and easier to use than sockets APIs and simpler, but more powerful
+  - Makes building distributed and decentralised applications much simpler
 - Reliable and efficient transfer of arbitrary amounts of data
   - Reticulum can handle a few bytes of data or files of many gigabytes
   - Sequencing, compression, transfer coordination and checksumming are automatic
@@ -172,11 +181,12 @@ program.
 
 Reticulum implements a range of generalised interface types that covers most of
 the communications hardware that Reticulum can run over. If your hardware is
-not supported, it's relatively simple to implement an interface class. I will
-gratefully accept pull requests for custom interfaces if they are generally
-useful.
+not supported, it's [simple to implement a custom interface module](https://markqvist.github.io/Reticulum/manual/interfaces.html#custom-interfaces).
 
-Currently, the following interfaces are supported:
+Pull requests for custom interfaces are gratefully accepted, provided they are
+generally useful and well-tested in real-world usage.
+
+Currently, the following built-in interfaces are supported:
 
 - Any Ethernet device
 - LoRa using [RNode](https://unsigned.io/rnode/)
@@ -322,12 +332,12 @@ In the default installation configuration, the `X25519`, `Ed25519` and
 (via the [PyCA/cryptography](https://github.com/pyca/cryptography) package).
 The hashing functions `SHA-256` and `SHA-512` are provided by the standard
 Python [hashlib](https://docs.python.org/3/library/hashlib.html). The `HKDF`,
-`HMAC`, `Fernet` primitives, and the `PKCS7` padding function are always
+`HMAC`, `Token` primitives, and the `PKCS7` padding function are always
 provided by the following internal implementations:
 
 - [HKDF.py](RNS/Cryptography/HKDF.py)
 - [HMAC.py](RNS/Cryptography/HMAC.py)
-- [Fernet.py](RNS/Cryptography/Fernet.py)
+- [Token.py](RNS/Cryptography/Token.py)
 - [PKCS7.py](RNS/Cryptography/PKCS7.py)
 
 

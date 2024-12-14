@@ -5,7 +5,7 @@ from .Hashes import sha256
 from .Hashes import sha512
 from .HKDF import hkdf
 from .PKCS7 import PKCS7
-from .Fernet import Fernet
+from .Token import Token
 from .Provider import backend
 
 import RNS.Cryptography.Provider as cp
@@ -20,5 +20,7 @@ elif cp.PROVIDER == cp.PROVIDER_PYCA:
     from RNS.Cryptography.Proxies import Ed25519PrivateKeyProxy as Ed25519PrivateKey
     from RNS.Cryptography.Proxies import Ed25519PublicKeyProxy as Ed25519PublicKey
 
-modules = glob.glob(os.path.dirname(__file__)+"/*.py")
-__all__ = [ os.path.basename(f)[:-3] for f in modules if not f.endswith('__init__.py')]
+py_modules  = glob.glob(os.path.dirname(__file__)+"/*.py")
+pyc_modules = glob.glob(os.path.dirname(__file__)+"/*.pyc")
+modules     = py_modules+pyc_modules
+__all__ = list(set([os.path.basename(f).replace(".pyc", "").replace(".py", "") for f in modules if not (f.endswith("__init__.py") or f.endswith("__init__.pyc"))]))

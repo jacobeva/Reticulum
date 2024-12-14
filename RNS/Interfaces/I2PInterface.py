@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2016-2022 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2024 Mark Qvist / unsigned.io
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .Interface import Interface
+from RNS.Interfaces.Interface import Interface
 import socketserver
 import threading
 import platform
@@ -627,14 +627,14 @@ class I2PInterfacePeer(Interface):
             RNS.log("Attempt to reconnect on a non-initiator I2P interface. This should not happen.", RNS.LOG_ERROR)
             raise IOError("Attempt to reconnect on a non-initiator I2P interface")
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         if hasattr(self, "parent_interface") and self.parent_interface != None and self.parent_count:
             self.parent_interface.rxb += len(data)
                     
         self.owner.inbound(data, self)
 
-    def processOutgoing(self, data):
+    def process_outgoing(self, data):
         if self.online:
             while self.writing:
                 time.sleep(0.001)
@@ -732,7 +732,7 @@ class I2PInterfacePeer(Interface):
                             # Read loop for KISS framing
                             if (in_frame and byte == KISS.FEND and command == KISS.CMD_DATA):
                                 in_frame = False
-                                self.processIncoming(data_buffer)
+                                self.process_incoming(data_buffer)
                             elif (byte == KISS.FEND):
                                 in_frame = True
                                 command = KISS.CMD_UNKNOWN
@@ -759,7 +759,7 @@ class I2PInterfacePeer(Interface):
                             # Read loop for HDLC framing
                             if (in_frame and byte == HDLC.FLAG):
                                 in_frame = False
-                                self.processIncoming(data_buffer)
+                                self.process_incoming(data_buffer)
                             elif (byte == HDLC.FLAG):
                                 in_frame = True
                                 data_buffer = b""
@@ -815,8 +815,8 @@ class I2PInterfacePeer(Interface):
         self.IN = False
 
         if hasattr(self, "parent_interface") and self.parent_interface != None:
-            if self.parent_interface.clients > 0:
-                self.parent_interface.clients -= 1
+            while self in self.parent_interface.spawned_interfaces:
+                self.parent_interface.spawned_interfaces.remove(self)
 
         if self in RNS.Transport.interfaces:
             if not self.initiator:
@@ -829,14 +829,28 @@ class I2PInterfacePeer(Interface):
 
 class I2PInterface(Interface):
     BITRATE_GUESS      = 256*1000
+    DEFAULT_IFAC_SIZE  = 16
 
-    def __init__(self, owner, name, rns_storagepath, peers, connectable = False, ifac_size = 16, ifac_netname = None, ifac_netkey = None):
+    @property
+    def clients(self):
+        return len(self.spawned_interfaces)
+
+    def __init__(self, owner, configuration):
         super().__init__()
+
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        rns_storagepath = c["storagepath"]
+        peers = c.as_list("peers") if "peers" in c else None
+        connectable = c.as_bool("connectable") if "connectable" in c else False
+        ifac_size = c["ifac_size"] if "ifac_size" in c else None
+        ifac_netname = c["ifac_netname"] if "ifac_netname" in c else None
+        ifac_netkey = c["ifac_netkey"] if "ifac_netkey" in c else None
         
         self.HW_MTU = 1064
 
         self.online = False
-        self.clients = 0
+        self.spawned_interfaces = []
         self.owner = owner
         self.connectable = connectable
         self.i2p_tunneled = True
@@ -956,10 +970,12 @@ class I2PInterface(Interface):
         spawned_interface.HW_MTU = self.HW_MTU
         RNS.log("Spawned new I2PInterface Peer: "+str(spawned_interface), RNS.LOG_VERBOSE)
         RNS.Transport.interfaces.append(spawned_interface)
-        self.clients += 1
+        while spawned_interface in self.spawned_interfaces:
+            self.spawned_interfaces.remove(spawned_interface)
+        self.spawned_interfaces.append(spawned_interface)
         spawned_interface.read_loop()
 
-    def processOutgoing(self, data):
+    def process_outgoing(self, data):
         pass
 
     def received_announce(self, from_spawned=False):

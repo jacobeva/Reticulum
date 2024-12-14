@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .Interface import Interface
+from RNS.Interfaces.Interface import Interface
 from time import sleep
 import sys
 import threading
@@ -59,6 +59,7 @@ class AX25():
 class AX25KISSInterface(Interface):
     MAX_CHUNK = 32768
     BITRATE_GUESS = 1200
+    DEFAULT_IFAC_SIZE = 8
 
     owner    = None
     port     = None
@@ -68,7 +69,7 @@ class AX25KISSInterface(Interface):
     stopbits = None
     serial   = None
 
-    def __init__(self, owner, name, callsign, ssid, port, speed, databits, parity, stopbits, preamble, txtail, persistence, slottime, flow_control):
+    def __init__(self, owner, configuration):
         import importlib
         if importlib.util.find_spec('serial') != None:
             import serial
@@ -78,6 +79,25 @@ class AX25KISSInterface(Interface):
             RNS.panic()
 
         super().__init__()
+
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        preamble = int(c["preamble"]) if "preamble" in c else None
+        txtail = int(c["txtail"]) if "txtail" in c else None
+        persistence = int(c["persistence"]) if "persistence" in c else None
+        slottime = int(c["slottime"]) if "slottime" in c else None
+        flow_control = c.as_bool("flow_control") if "flow_control" in c else False
+        port = c["port"] if "port" in c else None
+        speed = int(c["speed"]) if "speed" in c else 9600
+        databits = int(c["databits"]) if "databits" in c else 8
+        parity = c["parity"] if "parity" in c else "N"
+        stopbits = int(c["stopbits"]) if "stopbits" in c else 1
+
+        callsign = c["callsign"] if "callsign" in c else ""
+        ssid = int(c["ssid"]) if "ssid" in c else -1
+
+        if port == None:
+            raise ValueError("No port specified for serial interface")
 
         self.HW_MTU = 564
         
@@ -225,13 +245,13 @@ class AX25KISSInterface(Interface):
                 raise IOError("Could not enable AX.25 KISS interface flow control")
 
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         if (len(data) > AX25.HEADER_SIZE):
             self.rxb += len(data)
             self.owner.inbound(data[AX25.HEADER_SIZE:], self)
 
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         datalen = len(data)
         if self.online:
             if self.interface_ready:
@@ -281,7 +301,7 @@ class AX25KISSInterface(Interface):
         if len(self.packet_queue) > 0:
             data = self.packet_queue.pop(0)
             self.interface_ready = True
-            self.processOutgoing(data)
+            self.process_outgoing(data)
         elif len(self.packet_queue) == 0:
             self.interface_ready = True
 
@@ -300,7 +320,7 @@ class AX25KISSInterface(Interface):
 
                     if (in_frame and byte == KISS.FEND and command == KISS.CMD_DATA):
                         in_frame = False
-                        self.processIncoming(data_buffer)
+                        self.process_incoming(data_buffer)
                     elif (byte == KISS.FEND):
                         in_frame = True
                         command = KISS.CMD_UNKNOWN

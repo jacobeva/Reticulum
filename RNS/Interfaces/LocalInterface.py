@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .Interface import Interface
+from RNS.Interfaces.Interface import Interface
 import socketserver
 import threading
 import socket
@@ -152,7 +152,7 @@ class LocalClientInterface(Interface):
             raise IOError("Attempt to reconnect on a non-initiator local interface")
 
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         if hasattr(self, "parent_interface") and self.parent_interface != None:
             self.parent_interface.rxb += len(data)
@@ -166,7 +166,7 @@ class LocalClientInterface(Interface):
         # duration = time.time() - processing_start
         # self.rxptime += duration
 
-    def processOutgoing(self, data):
+    def process_outgoing(self, data):
         if self.online:
             try:
                 self.writing = True
@@ -208,7 +208,7 @@ class LocalClientInterface(Interface):
                         pointer += 1
                         if (in_frame and byte == HDLC.FLAG):
                             in_frame = False
-                            self.processIncoming(data_buffer)
+                            self.process_incoming(data_buffer)
                         elif (byte == HDLC.FLAG):
                             in_frame = True
                             data_buffer = b""
@@ -350,7 +350,7 @@ class LocalServerInterface(Interface):
         self.clients += 1
         spawned_interface.read_loop()
 
-    def processOutgoing(self, data):
+    def process_outgoing(self, data):
         pass
 
     def received_announce(self, from_spawned=False):

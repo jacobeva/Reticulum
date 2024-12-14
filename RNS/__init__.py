@@ -43,8 +43,10 @@ from .Resource import Resource, ResourceAdvertisement
 from .Cryptography import HKDF
 from .Cryptography import Hashes
 
-modules = glob.glob(os.path.dirname(__file__)+"/*.py")
-__all__ = [ os.path.basename(f)[:-3] for f in modules if not f.endswith('__init__.py')]
+py_modules  = glob.glob(os.path.dirname(__file__)+"/*.py")
+pyc_modules = glob.glob(os.path.dirname(__file__)+"/*.pyc")
+modules     = py_modules+pyc_modules
+__all__ = list(set([os.path.basename(f).replace(".pyc", "").replace(".py", "") for f in modules if not (f.endswith("__init__.py") or f.endswith("__init__.pyc"))]))
 
 LOG_CRITICAL = 0
 LOG_ERROR    = 1
@@ -57,12 +59,14 @@ LOG_EXTREME  = 7
 
 LOG_STDOUT   = 0x91
 LOG_FILE     = 0x92
+LOG_CALLBACK = 0x93
 
 LOG_MAXSIZE  = 5*1024*1024
 
 loglevel        = LOG_NOTICE
 logfile         = None
 logdest         = LOG_STDOUT
+logcall         = None
 logtimefmt      = "%Y-%m-%d %H:%M:%S"
 compact_log_fmt = False
 
@@ -136,6 +140,17 @@ def log(msg, level=3, _override_destination = False):
                 logging_lock.release()
                 _always_override_destination = True
                 log("Exception occurred while writing log message to log file: "+str(e), LOG_CRITICAL)
+                log("Dumping future log events to console!", LOG_CRITICAL)
+                log(msg, level)
+
+        elif logdest == LOG_CALLBACK:
+            try:
+                logcall(logstring)
+                logging_lock.release()
+            except Exception as e:
+                logging_lock.release()
+                _always_override_destination = True
+                log("Exception occurred while calling external log handler: "+str(e), LOG_CRITICAL)
                 log("Dumping future log events to console!", LOG_CRITICAL)
                 log(msg, level)
                 

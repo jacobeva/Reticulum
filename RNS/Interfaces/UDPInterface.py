@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .Interface import Interface
+from RNS.Interfaces.Interface import Interface
 import socketserver
 import threading
 import socket
@@ -31,6 +31,7 @@ import RNS
 
 class UDPInterface(Interface):
     BITRATE_GUESS = 10*1000*1000
+    DEFAULT_IFAC_SIZE = 16
 
     @staticmethod
     def get_address_for_if(name):
@@ -44,8 +45,23 @@ class UDPInterface(Interface):
         ifaddr = netinfo.ifaddresses(name)
         return ifaddr[netinfo.AF_INET][0]["broadcast"]
 
-    def __init__(self, owner, name, device=None, bindip=None, bindport=None, forwardip=None, forwardport=None):
+    def __init__(self, owner, configuration):
         super().__init__()
+
+        c           = Interface.get_config_obj(configuration)
+        name        = c["name"]
+        device      = c["device"] if "device" in c else None
+        port        = int(c["port"]) if "port" in c else None
+        bindip      = c["listen_ip"] if "listen_ip" in c else None
+        bindport    = int(c["listen_port"]) if "listen_port" in c else None
+        forwardip   = c["forward_ip"] if "forward_ip" in c else None
+        forwardport = int(c["forward_port"]) if "forward_port" in c else None
+
+        if port != None:
+            if bindport == None:
+                bindport = port
+            if forwardport == None:
+                forwardport = port
 
         self.HW_MTU = 1064
 
@@ -75,7 +91,7 @@ class UDPInterface(Interface):
             self.owner = owner
             address = (self.bind_ip, self.bind_port)
             socketserver.UDPServer.address_family = socket.AF_INET
-            self.server = socketserver.UDPServer(address, handlerFactory(self.processIncoming))
+            self.server = socketserver.UDPServer(address, handlerFactory(self.process_incoming))
 
             thread = threading.Thread(target=self.server.serve_forever)
             thread.daemon = True
@@ -89,11 +105,11 @@ class UDPInterface(Interface):
             self.forward_port = forwardport
 
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         self.owner.inbound(data, self)
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         try:
             udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)

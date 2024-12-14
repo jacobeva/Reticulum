@@ -24,6 +24,7 @@ import RNS
 import time
 import threading
 from collections import deque
+from RNS.vendor.configobj import ConfigObj
 
 class Interface:
     IN  = False
@@ -222,7 +223,7 @@ class Interface:
                     wait_time = (tx_time / self.announce_cap)
                     self.announce_allowed_at = now + wait_time
 
-                    self.processOutgoing(selected["raw"])
+                    self.process_outgoing(selected["raw"])
                     self.sent_announce()
 
                     if selected in self.announce_queue:
@@ -239,3 +240,14 @@ class Interface:
 
     def detach(self):
         pass
+
+    @staticmethod
+    def get_config_obj(config_in):
+        if type(config_in) == ConfigObj:
+            return config_in
+        else:
+            try:
+                return ConfigObj(config_in)
+            except Exception as e:
+                RNS.log(f"Could not parse supplied configuration data. The contained exception was: {e}", RNS.LOG_ERROR)
+                raise SystemError("Invalid configuration data supplied")

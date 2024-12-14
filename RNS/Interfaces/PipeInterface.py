@@ -20,7 +20,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from .Interface import Interface
+from RNS.Interfaces.Interface import Interface
 from time import sleep
 import sys
 import threading
@@ -46,15 +46,24 @@ class HDLC():
 class PipeInterface(Interface):
     MAX_CHUNK = 32768
     BITRATE_GUESS = 1*1000*1000
+    DEFAULT_IFAC_SIZE = 8
 
     owner    = None
     command  = None
     
-    def __init__(self, owner, name, command, respawn_delay):
+    def __init__(self, owner, configuration):
+        super().__init__()
+
+        c = Interface.get_config_obj(configuration)
+        name = c["name"]
+        command = c["command"] if "command" in c else None
+        respawn_delay = c.as_float("respawn_delay") if "respawn_delay" in c else None
+
+        if command == None:
+            raise ValueError("No command specified for PipeInterface")
+
         if respawn_delay == None:
             respawn_delay = 5
-
-        super().__init__()
 
         self.HW_MTU = 1064
         
@@ -101,12 +110,12 @@ class PipeInterface(Interface):
         RNS.log("Subprocess pipe for "+str(self)+" is now connected", RNS.LOG_VERBOSE)
 
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)            
         self.owner.inbound(data, self)
 
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         if self.online:
             data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
             written = self.process.stdin.write(data)
@@ -134,7 +143,7 @@ class PipeInterface(Interface):
 
                     if (in_frame and byte == HDLC.FLAG):
                         in_frame = False
-                        self.processIncoming(data_buffer)
+                        self.process_incoming(data_buffer)
                     elif (byte == HDLC.FLAG):
                         in_frame = True
                         data_buffer = b""
