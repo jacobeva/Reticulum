@@ -963,7 +963,7 @@ class RNodeMultiInterface(Interface):
         error_description += "Please update your RNode firmware with rnodeconf from: https://github.com/markqvist/Reticulum/RNS/Utilities/rnodeconf.py"
         self.hw_errors.append({"error": KISS.ERROR_INVALID_FIRMWARE, "description": error_description})
 
-    def processOutgoing(self, data, interface = None):
+    def process_outgoing(self, data, interface = None):
         if interface is None:
             # do nothing if RNS tries to transmit on this interface directly
             pass
@@ -1015,7 +1015,7 @@ class RNodeMultiInterface(Interface):
                             command == KISS.CMD_INT10_DATA or
                             command == KISS.CMD_INT11_DATA)):
                         in_frame = False
-                        self.subinterfaces[KISS.int_data_cmd_to_index(command)].processIncoming(data_buffer)
+                        self.subinterfaces[KISS.int_data_cmd_to_index(command)].process_incoming(data_buffer)
                         self.selected_index = KISS.int_data_cmd_to_index(command)
                         data_buffer = b""
                         command_buffer = b""
@@ -1321,7 +1321,7 @@ class RNodeMultiInterface(Interface):
                         if self.first_tx != None:
                             if time.time() > self.first_tx + self.id_interval:
                                 RNS.log("Interface "+str(self)+" is transmitting beacon data: "+str(self.id_callsign.decode("utf-8")), RNS.LOG_DEBUG)
-                                self.processOutgoing(self.id_callsign)
+                                self.process_outgoing(self.id_callsign)
                     
                     if (time.time() - self.last_port_io > self.port_io_timeout):
                         self.detect()
@@ -1691,13 +1691,13 @@ class RNodeSubInterface(Interface):
         except:
             self.bitrate = 0
 
-    def processIncoming(self, data):
+    def process_incoming(self, data):
         self.rxb += len(data)
         self.owner.inbound(data, self)
         self.r_stat_rssi = None
         self.r_stat_snr = None
 
-    def processOutgoing(self,data):
+    def process_outgoing(self,data):
         if self.online:
             if self.interface_ready:
                 if self.flow_control:
@@ -1709,7 +1709,7 @@ class RNodeSubInterface(Interface):
                     if self.parent_interface.first_tx == None:
                         self.parent_interface.first_tx = time.time()
                 self.txb += len(data)
-                self.parent_interface.processOutgoing(data, self)
+                self.parent_interface.process_outgoing(data, self)
             else:
                 self.queue(data)
 
@@ -1721,7 +1721,7 @@ class RNodeSubInterface(Interface):
         if len(self.packet_queue) > 0:
             data = self.packet_queue.pop(0)
             self.interface_ready = True
-            self.processOutgoing(data)
+            self.process_outgoing(data)
         elif len(self.packet_queue) == 0:
             self.interface_ready = True
 
