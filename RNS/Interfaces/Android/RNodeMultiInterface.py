@@ -459,9 +459,9 @@ class RNodeMultiInterface(Interface):
                     subint_config[subint_index][6] = codingrate
                     flow_control = subinterface_config.as_bool("flow_control") if "flow_control" in subinterface_config else False
                     subint_config[subint_index][7] = flow_control 
-                    st_alock = float(subinterface_config["airtime_limit_short"]) if "airtime_limit_short" in subinterface_config else None
+                    st_alock = float(subinterface_config["airtime_limit_short"]) if "airtime_limit_short" in subinterface_config and subinterface_config["airtime_limit_short"] is not None else None
                     subint_config[subint_index][8] = st_alock
-                    lt_alock = float(subinterface_config["airtime_limit_long"]) if "airtime_limit_long" in subinterface_config else None
+                    lt_alock = float(subinterface_config["airtime_limit_long"]) if "airtime_limit_long" in subinterface_config and subinterface_config["airtime_limit_long"] is not None else None
                     subint_config[subint_index][9] = lt_alock
 
                     if "outgoing" in subinterface_config and subinterface_config.as_bool("outgoing") == False:
