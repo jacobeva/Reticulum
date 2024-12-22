@@ -572,7 +572,6 @@ class Reticulum:
                                 
                         try:
                             def interface_post_init(interface):
->>>>>>> upstream/master
                                 if interface != None:
                                     if "outgoing" in c and c.as_bool("outgoing") == False:
                                         interface.OUT = False
