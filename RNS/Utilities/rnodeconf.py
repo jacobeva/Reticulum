@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2018-2022 Mark Qvist - unsigned.io/rnode
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -11,8 +11,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -41,7 +49,7 @@ import RNS
 RNS.logtimefmt      = "%H:%M:%S"
 RNS.compact_log_fmt = True
 
-program_version = "2.2.0"
+program_version = "2.4.0"
 eth_addr = "0xFDabC71AC4c0C78C95aDDDe3B4FA19d6273c5E73"
 btc_addr = "35G9uWVzrpJJibzUwpNUQGQNFzLirhrYAH"
 xmr_addr = "87HcDx6jRSkMQ9nPRd5K9hGGpZLn2s7vWETjMaVM5KfV4TD36NcYa8J8WSxhTSvBzzFpqDwp2fg5GX2moZ7VAP9QMZCZGET"
@@ -84,8 +92,11 @@ class KISS():
     CMD_NP_INT      = 0x65
     CMD_DISP_ADR    = 0x63
     CMD_DISP_BLNK   = 0x64
+    CMD_DISP_ROT    = 0x67
+    CMD_DISP_RCND   = 0x68
     CMD_BT_CTRL     = 0x46
     CMD_BT_PIN      = 0x62
+    CMD_DIS_IA      = 0x69
     CMD_BOARD       = 0x47
     CMD_PLATFORM    = 0x48
     CMD_MCU         = 0x49
@@ -123,77 +134,86 @@ class KISS():
         return data
 
 class ROM():
-    PLATFORM_AVR   = 0x90
-    PLATFORM_ESP32 = 0x80
-    PLATFORM_NRF52 = 0x70
+    PLATFORM_AVR        = 0x90
+    PLATFORM_ESP32      = 0x80
+    PLATFORM_NRF52      = 0x70
 
-    MCU_1284P      = 0x91
-    MCU_2560       = 0x92
-    MCU_ESP32      = 0x81
-    MCU_NRF52      = 0x71
+    MCU_1284P           = 0x91
+    MCU_2560            = 0x92
+    MCU_ESP32           = 0x81
+    MCU_NRF52           = 0x71
 
-    PRODUCT_RNODE  = 0x03
-    MODEL_A1       = 0xA1
-    MODEL_A6       = 0xA6
-    MODEL_A4       = 0xA4
-    MODEL_A9       = 0xA9
-    MODEL_A3       = 0xA3
-    MODEL_A8       = 0xA8
-    MODEL_A2       = 0xA2
-    MODEL_A7       = 0xA7
-    MODEL_A5       = 0xA5
-    MODEL_AA       = 0xAA
+    PRODUCT_RNODE       = 0x03
+    MODEL_A1            = 0xA1
+    MODEL_A6            = 0xA6
+    MODEL_A4            = 0xA4
+    MODEL_A9            = 0xA9
+    MODEL_A3            = 0xA3
+    MODEL_A8            = 0xA8
+    MODEL_A2            = 0xA2
+    MODEL_A7            = 0xA7
+    MODEL_A5            = 0xA5
+    MODEL_AA            = 0xAA
+    MODEL_AC            = 0xAC
 
-    PRODUCT_T32_10 = 0xB2
-    MODEL_BA       = 0xBA
-    MODEL_BB       = 0xBB
+    PRODUCT_T32_10      = 0xB2
+    MODEL_BA            = 0xBA
+    MODEL_BB            = 0xBB
 
-    PRODUCT_T32_20 = 0xB0
-    MODEL_B3       = 0xB3
-    MODEL_B8       = 0xB8
+    PRODUCT_T32_20      = 0xB0
+    MODEL_B3            = 0xB3
+    MODEL_B8            = 0xB8
 
-    PRODUCT_T32_21 = 0xB1
-    MODEL_B4       = 0xB4
-    MODEL_B9       = 0xB9
-    MODEL_B4_TCXO  = 0x04 # The TCXO model codes are only used here to select the
-    MODEL_B9_TCXO  = 0x09 # correct firmware, actual model codes in firmware is
-                          # still 0xB4 and 0xB9.
+    PRODUCT_T32_21      = 0xB1
+    MODEL_B4            = 0xB4
+    MODEL_B9            = 0xB9
+    MODEL_B4_TCXO       = 0x04 # The TCXO model codes are only used here to select the correct firmware,
+    MODEL_B9_TCXO       = 0x09 # actual model codes in firmware is still 0xB4 and 0xB9.
+    PRODUCT_H32_V2      = 0xC0
+    MODEL_C4            = 0xC4
+    MODEL_C9            = 0xC9
 
-    PRODUCT_H32_V2 = 0xC0
-    MODEL_C4       = 0xC4
-    MODEL_C9       = 0xC9
+    PRODUCT_H32_V3      = 0xC1
+    MODEL_C5            = 0xC5
+    MODEL_CA            = 0xCA
 
-    PRODUCT_H32_V3 = 0xC1
-    MODEL_C5       = 0xC5
-    MODEL_CA       = 0xCA
+    PRODUCT_TBEAM       = 0xE0
+    MODEL_E4            = 0xE4
+    MODEL_E9            = 0xE9
+    MODEL_E3            = 0xE3
+    MODEL_E8            = 0xE8
 
-    PRODUCT_TBEAM  = 0xE0
-    MODEL_E4       = 0xE4
-    MODEL_E9       = 0xE9
-    MODEL_E3       = 0xE3
-    MODEL_E8       = 0xE8
+    PRODUCT_TBEAM_S_V1  = 0xEA
+    MODEL_DB            = 0xDB
+    MODEL_DC            = 0xDC
 
-    PRODUCT_TBEAM_S_V1= 0xEA
-    MODEL_DB          = 0xDB
-    MODEL_DC          = 0xDC
+    PRODUCT_TDECK       = 0xD0
+    MODEL_D4            = 0xD4
+    MODEL_D9            = 0xD9
 
-    PRODUCT_TDECK  = 0xD0
-    MODEL_D4       = 0xD4
-    MODEL_D9       = 0xD9
+    PRODUCT_RAK4631     = 0x10
+    MODEL_11            = 0x11
+    MODEL_12            = 0x12
+    MODEL_13            = 0x13
+    MODEL_14            = 0x14
 
-    PRODUCT_RAK4631 = 0x10
-    MODEL_11       = 0x11
-    MODEL_12       = 0x12
-    MODEL_13       = 0x13
-    MODEL_14       = 0x14
-    PRODUCT_OPENCOM_XL = 0x20
-    MODEL_21       = 0x21
+    PRODUCT_OPENCOM_XL  = 0x20
+    MODEL_21            = 0x21
 
+    PRODUCT_TECHO       = 0x15
+    MODEL_16            = 0x16
+    MODEL_17            = 0x17
 
-    PRODUCT_TECHO  = 0x15
-    MODEL_T4       = 0x16
-    MODEL_T9       = 0x17
+    PRODUCT_HELTEC_T114 = 0xC2
+    BOARD_HELTEC_T114   = 0x3C
+    MODEL_C6            = 0xC6 # Heltec Mesh Node T114, 470-510 MHz (HT-n5262-LF)
+    MODEL_C7            = 0xC7 # Heltec Mesh Node T114, 863-928 MHz (HT-n5262-HF)
     
+    PRODUCT_XIAO_S3     = 0xEB
+    BOARD_XIAO_S3       = 0x3E
+    MODEL_DE            = 0xDE # Xiao ESP32S3 with Wio-SX1262 module, 433 MHz
+    MODEL_DD            = 0xDD # Xiao ESP32S3 with Wio-SX1262 module, 868 MHz
+
     PRODUCT_HMBRW  = 0xF0
     MODEL_FF       = 0xFF
     MODEL_FE       = 0xFE
@@ -212,6 +232,17 @@ class ROM():
     ADDR_CONF_BW   = 0x9F
     ADDR_CONF_FREQ = 0xA3
     ADDR_CONF_OK   = 0xA7
+
+    ADDR_CONF_BT   = 0xB0
+    ADDR_CONF_DSET = 0xB1
+    ADDR_CONF_DINT = 0xB2
+    ADDR_CONF_DADR = 0xB3
+    ADDR_CONF_DBLK = 0xB4
+    ADDR_CONF_DROT = 0xB8
+    ADDR_CONF_PSET = 0xB5
+    ADDR_CONF_PINT = 0xB6
+    ADDR_CONF_BSET = 0xB7
+    ADDR_CONF_DIA  = 0xB9
 
     INFO_LOCK_BYTE = 0x73
     CONF_OK_BYTE   = 0x73
@@ -244,6 +275,8 @@ products = {
     ROM.PRODUCT_TECHO:  "LilyGO T-Echo",
     ROM.PRODUCT_RAK4631: "RAK4631",
     ROM.PRODUCT_OPENCOM_XL: "openCom XL",
+    ROM.PRODUCT_HELTEC_T114: "Heltec Mesh Node T114",
+    ROM.PRODUCT_XIAO_S3: "Seeed XIAO ESP32S3 Wio-SX1262",
 }
 
 platforms = {
@@ -266,6 +299,7 @@ models = {
     0xA6: [820000000, 1020000000, 22, "820 - 960 MHz", "rnode_firmware_t3s3.zip", "SX1262"],
     0xA5: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_t3s3_sx127x.zip", "SX1278"],
     0xAA: [820000000, 1020000000, 17, "820 - 960 MHz", "rnode_firmware_t3s3_sx127x.zip", "SX1276"],
+    0xAC: [2400000000, 2500000000, 20, "2.4 - 2.5 GHz", "rnode_firmware_t3s3_sx1280_pa.zip", "SX1280"],
     0xA2: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_ng21.zip", "SX1278"],
     0xA7: [820000000, 1020000000, 17, "820 - 1020 MHz", "rnode_firmware_ng21.zip", "SX1276"],
     0xA3: [410000000, 525000000, 17, "410 - 525 MHz", "rnode_firmware_ng20.zip", "SX1278"],
@@ -280,8 +314,10 @@ models = {
     0xBB: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_lora32v10.zip", "SX1276"],
     0xC4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_heltec32v2.zip", "SX1278"],
     0xC9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_heltec32v2.zip", "SX1276"],
-    0xC5: [420000000, 520000000, 21, "420 - 520 MHz", "rnode_firmware_heltec32v3.zip", "SX1268"],
-    0xCA: [850000000, 950000000, 21, "850 - 950 MHz", "rnode_firmware_heltec32v3.zip", "SX1262"],
+    0xC5: [420000000, 520000000, 22, "420 - 520 MHz", "rnode_firmware_heltec32v3.zip", "SX1268"],
+    0xCA: [850000000, 950000000, 22, "850 - 950 MHz", "rnode_firmware_heltec32v3.zip", "SX1262"],
+    0xC6: [420000000, 520000000, 22, "420 - 520 MHz", "rnode_firmware_heltec_t114.zip", "SX1268"],
+    0xC7: [850000000, 950000000, 22, "850 - 950 MHz", "rnode_firmware_heltec_t114.zip", "SX1262"],
     0xE4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_tbeam.zip", "SX1278"],
     0xE9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_tbeam.zip", "SX1276"],
     0xD4: [420000000, 520000000, 22, "420 - 520 MHz", "rnode_firmware_tdeck.zip", "SX1268"],
@@ -297,6 +333,8 @@ models = {
     0x16: [779000000, 928000000, 22, "430 - 510 Mhz", "rnode_firmware_techo.zip", "SX1262"],
     0x17: [779000000, 928000000, 22, "779 - 928 Mhz", "rnode_firmware_techo.zip", "SX1262"],
     0x21: [820000000, 960000000, 22, "820 - 960 MHz", "rnode_firmware_opencom_xl.zip", "SX1262 + SX1280"],
+    0xDE: [420000000, 520000000, 22, "420 - 520 MHz", "rnode_firmware_xiao_esp32s3.zip", "SX1262"],
+    0xDD: [850000000, 950000000, 22, "850 - 950 MHz", "rnode_firmware_xiao_esp32s3.zip", "SX1262"],
     0xFE: [100000000, 1100000000, 17, "(Band capabilities unknown)", None, "Unknown"],
     0xFF: [100000000, 1100000000, 14, "(Band capabilities unknown)", None, "Unknown"],
 }
@@ -666,6 +704,30 @@ class RNode():
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while sending display blanking timeout command to device")
+
+    def set_display_rotation(self, rotation):
+        data = bytes([rotation & 0xFF])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_DISP_ROT])+data+bytes([KISS.FEND])
+        written = self.serial.write(kiss_command)
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending display rotation command to device")
+
+    def recondition_display(self):
+        data = bytes([0x01])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_DISP_RCND])+data+bytes([KISS.FEND])
+        written = self.serial.write(kiss_command)
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending display recondition command to device")
+
+    def set_disable_interference_avoidance(self, ia_disabled):
+        if ia_disabled:
+            data = bytes([0x01])
+        else:
+            data = bytes([0x00])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_DIS_IA])+data+bytes([KISS.FEND])
+        written = self.serial.write(kiss_command)
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending interference avoidance configuration command to device")
 
     def set_neopixel_intensity(self, intensity):
         data = bytes([intensity & 0xFF])
@@ -1158,9 +1220,10 @@ def ensure_firmware_file(fw_filename):
                 RNS.log("The selected firmware for this board is version "+selected_version)
 
             else:
-                RNS.log("Online firmware version check was disabled, but no firmware version specified for install.")
-                RNS.log("use the --fw-version option to manually specify a version.")
-                graceful_exit(98)
+                if selected_version == None:
+                    RNS.log("Online firmware version check was disabled, but no firmware version specified for install.")
+                    RNS.log("use the --fw-version option to manually specify a version.")
+                    graceful_exit(98)
 
             # if custom firmware url, use it
             if fw_url != None:
@@ -1308,7 +1371,9 @@ def main():
 
         parser.add_argument("-D", "--display", action="store", metavar="i", type=int, default=None, help="Set display intensity (0-255)")
         parser.add_argument("-t", "--timeout", action="store", metavar="s", type=int, default=None, help="Set display timeout in seconds, 0 to disable")
+        parser.add_argument("-R", "--rotation", action="store", metavar="rotation", type=int, default=None, help="Set display rotation, valid values are 0 through 3")
         parser.add_argument("--display-addr", action="store", metavar="byte", type=str, default=None, help="Set display address as hex byte (00 - FF)")
+        parser.add_argument("--recondition-display", action="store_true", help="Start display reconditioning")
 
         parser.add_argument("--np", action="store", metavar="i", type=int, default=None, help="Set NeoPixel intensity (0-255)")
 
@@ -1317,6 +1382,11 @@ def main():
         parser.add_argument("--txp", action="store", metavar="dBm", type=int, default=None, help="TX power in dBm for TNC mode")
         parser.add_argument("--sf", action="store", metavar="factor", type=int, default=None, help="Spreading factor for TNC mode (7 - 12)")
         parser.add_argument("--cr", action="store", metavar="rate", type=int, default=None, help="Coding rate for TNC mode (5 - 8)")
+
+        parser.add_argument("-x", "--ia-enable", action="store_true", help="Enable interference avoidance")
+        parser.add_argument("-X", "--ia-disable", action="store_true", help="Disable interference avoidance")
+
+        parser.add_argument("-c", "--config", action="store_true", help="Print device configuration")
 
         parser.add_argument("--eeprom-backup", action="store_true", help="Backup EEPROM to file")
         parser.add_argument("--eeprom-dump", action="store_true", help="Dump EEPROM to console")
@@ -1331,7 +1401,7 @@ def main():
         parser.add_argument("-r", "--rom", action="store_true", help="Bootstrap EEPROM without flashing firmware")
         parser.add_argument("-k", "--key", action="store_true", help="Generate a new signing key and exit") # 
         parser.add_argument("-S", "--sign", action="store_true", help="Display public part of signing key")
-        parser.add_argument("-H", "--firmware-hash", action="store", help="Display installed firmware hash")
+        parser.add_argument("-H", "--firmware-hash", action="store", help="Set installed firmware hash")
         parser.add_argument("-K", "--get-target-firmware-hash", action="store_true", help=argparse.SUPPRESS) # Get target firmware hash from device
         parser.add_argument("-L", "--get-firmware-hash", action="store_true", help=argparse.SUPPRESS) # Get calculated firmware hash from device
         parser.add_argument("--set-firmware-length", action="store", help=argparse.SUPPRESS) # Set length of flashed firmware region on device
@@ -1652,30 +1722,32 @@ def main():
                 
             print("")
             print("What kind of device is this?\n")
-            print("[1] A specific kind of RNode")
-            print("       .")
-            print("      / \\   Select this option if you have an RNode of a specific")
-            print("       |    type, built from a recipe or bought from a vendor.")
+            print("       |   Select this option if you have an RNode of a specific")
+            print("      \\ /  type, built from a recipe or bought from a vendor.")
+            print("       '")
+            print("[1]  A specific kind of RNode")
             print("")
-            print("[2] Homebrew RNode")
-            print("       .")
-            print("      / \\   Select this option if you have put toghether an RNode")
-            print("       |    of your own design, or if you are prototyping one.")
+            print("       |   Select this option if you have put toghether an RNode")
+            print("      \\ /  of your own design, or if you are prototyping one.")
+            print("       '")
+            print("[2]  Homebrew RNode")
             print("")
-            print("[3] LilyGO LoRa32 v2.1 (aka T3 v1.6 / T3 v1.6.1)")
-            print("[4] LilyGO LoRa32 v2.0")
-            print("[5] LilyGO LoRa32 v1.0")
-            print("[6] LilyGO T-Beam")
-            print("[7] Heltec LoRa32 v2")
-            print("[8] Heltec LoRa32 v3")
-            print("[9] LilyGO LoRa T3S3")
+            print("       |   Select one of these options if you want to easily turn")
+            print("      \\ /  a supported development board into an RNode.")
+            print("       '")
+            print("[3]  LilyGO LoRa32 v2.1 (aka T3 v1.6 / T3 v1.6.1)")
+            print("[4]  LilyGO LoRa32 v2.0")
+            print("[5]  LilyGO LoRa32 v1.0")
+            print("[6]  LilyGO T-Beam")
+            print("[7]  Heltec LoRa32 v2")
+            print("[8]  Heltec LoRa32 v3")
+            print("[9]  LilyGO LoRa T3S3")
             print("[10] RAK4631")
             print("[11] LilyGo T-Echo")
             print("[12] LilyGO T-Beam Supreme")
             print("[13] LilyGO T-Deck")
-            print("       .")
-            print("      / \\   Select one of these options if you want to easily turn")
-            print("       |    a supported development board into an RNode.")
+            print("[14] Heltec T114")
+            print("[15] Seeed XIAO ESP32S3 Wio-SX1262")
             print("")
             print("---------------------------------------------------------------------------")
             print("\nEnter the number that matches your device type:\n? ", end="")
@@ -1684,7 +1756,7 @@ def main():
             try:
                 c_dev = int(input())
                 c_mod = False
-                if c_dev < 1 or c_dev > 13:
+                if c_dev < 1 or c_dev > 15:
                     raise ValueError()
                 elif c_dev == 1:
                     selected_product = ROM.PRODUCT_RNODE
@@ -1867,6 +1939,33 @@ def main():
                     print("who would like to experiment with it. Hit enter to continue.")
                     print("---------------------------------------------------------------------------")
                     input()
+                elif c_dev == 14:
+                    selected_product = ROM.PRODUCT_HELTEC_T114
+                    clear()
+                    print("")
+                    print("---------------------------------------------------------------------------")
+                    print("                      Heltec T114 RNode Installer")
+                    print("")
+                    print("Important! Using RNode firmware on Heltec T114 devices should currently be")
+                    print("considered experimental. It is not intended for production or critical use.")
+                    print("The currently supplied firmware is provided AS-IS as a courtesey to those")
+                    print("who would like to experiment with it. Hit enter to continue.")
+                    print("---------------------------------------------------------------------------")
+                    input()
+                elif c_dev == 15:
+                    selected_product = ROM.PRODUCT_XIAO_S3
+                    clear()
+                    print("")
+                    print("---------------------------------------------------------------------------")
+                    print("                 SeeedStudio XIAO esp32s3 wio RNode Installer")
+                    print("")
+                    print("Important! Using RNode firmware on SeeedStudio XIAO/wio devices should currently be")
+                    print("considered experimental. It is not intended for production or critical use.")
+                    print("The currently supplied firmware is provided AS-IS as a courtesey to those")
+                    print("who would like to experiment with it. Hit enter to continue.")
+                    print("---------------------------------------------------------------------------")
+                    input()
+
             except Exception as e:
                 print("That device type does not exist, exiting now.")
                 graceful_exit()
@@ -1975,10 +2074,12 @@ def main():
                     print("");
                     print("[3] 433 MHz         (with SX1268 chip)")
                     print("[4] 868/915/923 MHz (with SX1262 chip)")
+                    print("");
+                    print("[5] 2.4 GHz         (with SX1280 chip and PA)")
                     print("\n? ", end="")
                     try:
                         c_model = int(input())
-                        if c_model < 1 or c_model > 4:
+                        if c_model < 1 or c_model > 5:
                             raise ValueError()
                         elif c_model == 1:
                             selected_model = ROM.MODEL_A5
@@ -1994,6 +2095,10 @@ def main():
                             selected_platform = ROM.PLATFORM_ESP32
                         elif c_model == 4:
                             selected_model = ROM.MODEL_A6
+                            selected_mcu = ROM.MCU_ESP32
+                            selected_platform = ROM.PLATFORM_ESP32
+                        elif c_model == 5:
+                            selected_model = ROM.MODEL_AC
                             selected_mcu = ROM.MCU_ESP32
                             selected_platform = ROM.PLATFORM_ESP32
                     except Exception as e:
@@ -2183,6 +2288,47 @@ def main():
                 except Exception as e:
                     print("That band does not exist, exiting now.")
                     exit()
+            
+            elif selected_product == ROM.PRODUCT_HELTEC_T114:
+                selected_mcu = ROM.MCU_NRF52
+                print("\nWhat band is this Heltec T114 for?\n")
+                print("[1] 433 MHz")
+                print("[2] 868 MHz")
+                print("[3] 915 MHz")
+                print("[4] 923 MHz")
+                try:
+                    c_model = int(input())
+                    if c_model < 1 or c_model > 4:
+                        raise ValueError()
+                    elif c_model == 1:
+                        selected_model = ROM.MODEL_C6
+                        selected_platform = ROM.PLATFORM_NRF52
+                    elif c_model > 1:
+                        selected_model = ROM.MODEL_C7
+                        selected_platform = ROM.PLATFORM_NRF52
+                except Exception as e:
+                    print("That band does not exist, exiting now.")
+                    exit()
+
+            elif selected_product == ROM.PRODUCT_XIAO_S3:
+                selected_mcu = ROM.MCU_ESP32
+                print("\nWhat band is this XIAO esp32s3 wio module for?\n")
+                print("[1] 433 MHz")
+                print("[2] 868 MHz")
+                try:
+                    c_model = int(input())
+                    if c_model < 1 or c_model > 2:
+                        raise ValueError()
+                    elif c_model == 1:
+                        selected_model = ROM.MODEL_DE
+                        selected_platform = ROM.PLATFORM_ESP32
+                    elif c_model == 2:
+                        selected_model = ROM.MODEL_DD
+                        selected_platform = ROM.PLATFORM_ESP32
+                except Exception as e:
+                    print("That band does not exist, exiting now.")
+                    exit()
+
             elif selected_product == ROM.PRODUCT_RAK4631:
                 selected_mcu = ROM.MCU_NRF52
                 print("\nWhat band is this RAK4631 for?\n")
@@ -2214,13 +2360,13 @@ def main():
                 print("\n? ", end="")
                 try:
                     c_model = int(input())
-                    if c_model < 1 or c_model > 1:
+                    if c_model < 1 or c_model > 4:
                         raise ValueError()
                     elif c_model == 1:
-                        selected_model = ROM.MODEL_T4
+                        selected_model = ROM.MODEL_16
                         selected_platform = ROM.PLATFORM_NRF52
                     elif c_model > 1:
-                        selected_model = ROM.MODEL_T9
+                        selected_model = ROM.MODEL_17
                         selected_platform = ROM.PLATFORM_NRF52
                 except Exception as e:
                     print("That band does not exist, exiting now.")
@@ -2920,6 +3066,24 @@ def main():
                             "0x210000",UPD_DIR+"/"+selected_version+"/console_image.bin",
                             "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_t3s3_sx127x.partitions",
                         ]
+                    elif fw_filename == "rnode_firmware_t3s3_sx1280_pa.zip":
+                        return [
+                            sys.executable, flasher,
+                            "--chip", "esp32s3",
+                            "--port", args.port,
+                            "--baud", args.baud_flash,
+                            "--before", "default_reset",
+                            "--after", "hard_reset",
+                            "write_flash", "-z",
+                            "--flash_mode", "dio",
+                            "--flash_freq", "80m",
+                            "--flash_size", "4MB",
+                            "0xe000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_t3s3_sx1280_pa.boot_app0",
+                            "0x0",  UPD_DIR+"/"+selected_version+"/rnode_firmware_t3s3_sx1280_pa.bootloader",
+                            "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_t3s3_sx1280_pa.bin",
+                            "0x210000",UPD_DIR+"/"+selected_version+"/console_image.bin",
+                            "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_t3s3_sx1280_pa.partitions",
+                        ]
                     elif fw_filename == "rnode_firmware_tbeam_supreme.zip":
                         return [
                             sys.executable, flasher,
@@ -2955,6 +3119,24 @@ def main():
                             "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_tdeck.bin",
                             "0x210000",UPD_DIR+"/"+selected_version+"/console_image.bin",
                             "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_tdeck.partitions",
+                        ]
+                    elif fw_filename == "rnode_firmware_xiao_esp32s3.zip":
+                        return [
+                            sys.executable, flasher,
+                            "--chip", "esp32s3",
+                            "--port", args.port,
+                            "--baud", args.baud_flash,
+                            "--before", "default_reset",
+                            "--after", "hard_reset",
+                            "write_flash", "-z",
+                            "--flash_mode", "dio",
+                            "--flash_freq", "80m",
+                            "--flash_size", "8MB",
+                            "0xe000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_xiao_esp32s3.boot_app0",
+                            "0x0",  UPD_DIR+"/"+selected_version+"/rnode_firmware_xiao_esp32s3.bootloader",
+                            "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_xiao_esp32s3.bin",
+                            "0x210000",UPD_DIR+"/"+selected_version+"/console_image.bin",
+                            "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_xiao_esp32s3.partitions",
                         ]
                     elif fw_filename == "extracted_rnode_firmware.zip":
                         return [
@@ -3069,12 +3251,12 @@ def main():
                                 if args.platform == ROM.PLATFORM_ESP32:
                                     wants_fw_provision = True
                                     RNS.log("Waiting for ESP32 reset...")
-                                    time.sleep(7)
+                                    time.sleep(8)
                                 if args.platform == ROM.PLATFORM_NRF52:
                                     wants_fw_provision = True
                                     RNS.log("Waiting for NRF52 reset...")
                                     # Don't need to wait as long this time.
-                                    time.sleep(5)
+                                    time.sleep(6)
                             else:
                                 RNS.log("Error from flasher ("+str(flash_status)+") while writing.")
                                 RNS.log("Some boards have trouble flashing at high speeds, and you can")
@@ -3326,6 +3508,63 @@ def main():
                     RNS.log("Firmware update file not found")
                     graceful_exit()
 
+            if args.config:
+                eeprom_reserved = 200
+                if rnode.platform == ROM.PLATFORM_ESP32:
+                    eeprom_size = 296
+                elif rnode.platform == ROM.PLATFORM_NRF52:
+                    eeprom_size = 296
+                else:
+                    eeprom_size = 4096
+
+                eeprom_offset = eeprom_size-eeprom_reserved
+                def ea(a):
+                    return a+eeprom_offset
+                ec_bt   = rnode.eeprom[ROM.ADDR_CONF_BT]
+                ec_dint = rnode.eeprom[ROM.ADDR_CONF_DINT]
+                ec_dadr = rnode.eeprom[ROM.ADDR_CONF_DADR]
+                ec_dblk = rnode.eeprom[ROM.ADDR_CONF_DBLK]
+                ec_drot = rnode.eeprom[ROM.ADDR_CONF_DROT]
+                ec_pset = rnode.eeprom[ROM.ADDR_CONF_PSET]
+                ec_pint = rnode.eeprom[ROM.ADDR_CONF_PINT]
+                ec_bset = rnode.eeprom[ROM.ADDR_CONF_BSET]
+                ec_dia  = rnode.eeprom[ROM.ADDR_CONF_DIA]
+                print("\nDevice configuration:")
+                if ec_bt == 0x73:
+                    print(f"  Bluetooth              : Enabled")
+                else:
+                    print(f"  Bluetooth              : Disabled")
+                if ec_dia == 0x00:
+                    print(f"  Interference avoidance : Enabled")
+                else:
+                    print(f"  Interference avoidance : Disabled")
+                print(    f"  Display brightness     : {ec_dint}")
+                if ec_dadr == 0xFF:
+                    print(f"  Display address        : Default")
+                else:
+                    print(f"  Display address        : {RNS.hexrep(ec_dadr, delimit=False)}")
+                if ec_bset == 0x73 and ec_dblk != 0x00:
+                    print(f"  Display blanking       : {ec_dblk}s")
+                else:
+                    print(f"  Display blanking       : Disabled")
+                if ec_drot != 0xFF:
+                    if ec_drot == 0x00:
+                        rstr = "Landscape"
+                    if ec_drot == 0x01:
+                        rstr = "Portrait"
+                    if ec_drot == 0x02:
+                        rstr = "Landscape 180"
+                    if ec_drot == 0x03:
+                        rstr = "Portrait 180"
+                    print(f"  Display rotation       : {rstr}")
+                else:
+                    print(f"  Display rotation       : Default")
+                if ec_pset == 0x73:
+                    print(f"  Neopixel Intensity     : {ec_pint}")
+                print("")
+
+                graceful_exit()
+
             if args.eeprom_dump:
                 RNS.log("EEPROM contents:")
                 RNS.log(RNS.hexrep(rnode.eeprom))
@@ -3365,6 +3604,31 @@ def main():
                 else:
                     RNS.log("Setting display timeout to "+str(di))
                 rnode.set_display_blanking(di)
+
+            if isinstance(args.rotation, int):
+                dr = args.rotation
+                if dr < 0:
+                    dr = 0
+                if dr > 3:
+                    dr = 3
+
+                RNS.log("Setting display rotation to "+str(dr))
+                rnode.set_display_rotation(dr)
+
+            if isinstance(args.recondition_display, bool):
+                if args.recondition_display:
+                    RNS.log("Starting display reconditioning")
+                    rnode.recondition_display()
+
+            if isinstance(args.ia_enable, bool):
+                if args.ia_enable:
+                    RNS.log("Enabling interference avoidance")
+                    rnode.set_disable_interference_avoidance(False)
+
+            if isinstance(args.ia_disable, bool):
+                if args.ia_disable:
+                    RNS.log("Disabling interference avoidance")
+                    rnode.set_disable_interference_avoidance(True)
 
             if isinstance(args.np, int):
                 di = args.np
@@ -3487,7 +3751,7 @@ def main():
                         elif rnode.platform == ROM.PLATFORM_NRF52:
                             rnode_serial.close()
                             RNS.log("Waiting for NRF52 reset...")
-                            time.sleep(14)
+                            time.sleep(18)
                             selected_port = None
                             ports = list_ports.comports()
                             for port in ports:
@@ -3698,7 +3962,9 @@ def main():
                             if rnode.platform == ROM.PLATFORM_ESP32:
                                 rnode.hard_reset()
                                 RNS.log("Waiting for ESP32 reset...")
-                                time.sleep(6.5)
+                                time.sleep(7)
+                                if selected_model in [ROM.MODEL_AC, ROM.MODEL_A6, ROM.MODEL_A1, ROM.MODEL_AA, ROM.MODEL_A5]:
+                                    time.sleep(5)
 
                             elif rnode.platform == ROM.PLATFORM_NRF52:
                                 # Wait a few seconds before hard resetting.
@@ -3717,7 +3983,7 @@ def main():
 
                                 # Give plenty of time for to allow for
                                 # potential e-ink display refresh too.
-                                time.sleep(14)
+                                time.sleep(20)
 
                                 # After the hard reset, the port number will
                                 # change. We need to find the new port number,

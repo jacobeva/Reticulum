@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -21,6 +29,7 @@
 # SOFTWARE.
 
 from RNS.Interfaces.Interface import Interface
+from RNS.Interfaces.BackboneInterface import BackboneInterface
 import socketserver
 import threading
 import socket
@@ -52,16 +61,17 @@ class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
 
 class LocalClientInterface(Interface):
     RECONNECT_WAIT = 8
+    AUTOCONFIGURE_MTU = True
 
-    def __init__(self, owner, name, target_port = None, connected_socket=None):
+    def __init__(self, owner, name, target_port = None, connected_socket=None, socket_path=None):
         super().__init__()
 
-        # TODO: Remove at some point
-        # self.rxptime = 0
+        self.epoll_backend    = False
+        self.HW_MTU           = 262144
+        self.online           = False
         
-        self.HW_MTU = 1064
-
-        self.online  = False
+        if socket_path != None and RNS.Reticulum.get_instance().use_af_unix: self.socket_path = f"\0rns/{socket_path}"
+        else: self.socket_path = None
         
         self.IN               = True
         self.OUT              = False
@@ -72,15 +82,28 @@ class LocalClientInterface(Interface):
         self.detached         = False
         self.name             = name
         self.mode             = RNS.Interfaces.Interface.Interface.MODE_FULL
+        self.frame_buffer     = b""
+        self.transmit_buffer  = b""
+
+        if RNS.vendor.platformutils.use_epoll():
+            self.epoll_backend = True
 
         if connected_socket != None:
             self.receives    = True
             self.target_ip   = None
             self.target_port = None
             self.socket      = connected_socket
-            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+            if self.socket.family == socket.AF_INET:
+                self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
             self.is_connected_to_shared_instance = False
+
+        elif self.socket_path != None:
+            self.receives    = True
+            self.target_ip   = None
+            self.target_port = None
+            self.connect()
 
         elif target_port != None:
             self.receives    = True
@@ -89,7 +112,7 @@ class LocalClientInterface(Interface):
             self.connect()
 
         self.owner   = owner
-        self.bitrate = 1000*1000*1000
+        self.bitrate = 1_000_000_000
         self.online  = True
         self.writing = False
 
@@ -100,21 +123,29 @@ class LocalClientInterface(Interface):
         self.announce_rate_penalty = None
 
         if connected_socket == None:
-            thread = threading.Thread(target=self.read_loop)
-            thread.daemon = True
-            thread.start()
+            if not self.epoll_backend:
+                thread = threading.Thread(target=self.read_loop)
+                thread.daemon = True
+                thread.start()
 
     def should_ingress_limit(self):
         return False
 
     def connect(self):
-        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        self.socket.connect((self.target_ip, self.target_port))
+        if self.socket_path != None:
+            self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            self.socket.connect(self.socket_path)
+        
+        else:
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.socket.connect((self.target_ip, self.target_port))
 
         self.online = True
         self.is_connected_to_shared_instance = True
         self.never_connected = False
+
+        if self.epoll_backend: BackboneInterface.add_client_socket(self.socket, self)
 
         return True
 
@@ -139,9 +170,11 @@ class LocalClientInterface(Interface):
                     RNS.log("Reconnected socket for "+str(self)+".", RNS.LOG_INFO)
 
                 self.reconnecting = False
-                thread = threading.Thread(target=self.read_loop)
-                thread.daemon = True
-                thread.start()
+                if not self.epoll_backend:
+                    thread = threading.Thread(target=self.read_loop)
+                    thread.daemon = True
+                    thread.start()
+
                 def job():
                     time.sleep(LocalClientInterface.RECONNECT_WAIT+2)
                     RNS.Transport.shared_connection_reappeared()
@@ -154,75 +187,90 @@ class LocalClientInterface(Interface):
 
     def process_incoming(self, data):
         self.rxb += len(data)
-        if hasattr(self, "parent_interface") and self.parent_interface != None:
-            self.parent_interface.rxb += len(data)
+        if self.parent_interface != None: self.parent_interface.rxb += len(data)
         
-        # TODO: Remove at some point
-        # processing_start = time.time()
-        
-        self.owner.inbound(data, self)
-
-        # TODO: Remove at some point
-        # duration = time.time() - processing_start
-        # self.rxptime += duration
+        try:
+            self.owner.inbound(data, self)
+        except Exception as e:
+            RNS.log(f"An error in the processing of an incoming frame for {self}: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
 
     def process_outgoing(self, data):
         if self.online:
             try:
-                self.writing = True
+                if self.epoll_backend:
+                    self.transmit_buffer += bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                    BackboneInterface.tx_ready(self)
 
-                if self._force_bitrate:
-                    if not hasattr(self, "send_lock"):
-                        self.send_lock = Lock()
+                else:
+                    self.writing = True
 
-                    with self.send_lock:
-                        # RNS.log(f"Simulating latency of {RNS.prettytime(s)} for {len(data)} bytes", RNS.LOG_EXTREME)
-                        s = len(data) / self.bitrate * 8
-                        time.sleep(s)
+                    if self._force_bitrate:
+                        if not hasattr(self, "send_lock"):
+                            self.send_lock = Lock()
 
-                data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
-                self.socket.sendall(data)
-                self.writing = False
-                self.txb += len(data)
-                if hasattr(self, "parent_interface") and self.parent_interface != None:
-                    self.parent_interface.txb += len(data)
+                        with self.send_lock:
+                            # RNS.log(f"Simulating latency of {RNS.prettytime(s)} for {len(data)} bytes", RNS.LOG_EXTREME)
+                            s = len(data) / self.bitrate * 8
+                            time.sleep(s)
+
+                    data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                    self.socket.sendall(data)
+                    self.writing = False
+                    self.txb += len(data)
+                    if hasattr(self, "parent_interface") and self.parent_interface != None:
+                        self.parent_interface.txb += len(data)
 
             except Exception as e:
                 RNS.log("Exception occurred while transmitting via "+str(self)+", tearing down interface", RNS.LOG_ERROR)
                 RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
+                RNS.trace_exception(e)
                 self.teardown()
 
+    def handle_hdlc(self, data_in):
+        self.frame_buffer += data_in
+        flags_remaining = True
+        while flags_remaining:
+            frame_start = self.frame_buffer.find(HDLC.FLAG)
+            if frame_start != -1:
+                frame_end = self.frame_buffer.find(HDLC.FLAG, frame_start+1)
+                if frame_end != -1:
+                    frame = self.frame_buffer[frame_start+1:frame_end]
+                    frame = frame.replace(bytes([HDLC.ESC, HDLC.FLAG ^ HDLC.ESC_MASK]), bytes([HDLC.FLAG]))
+                    frame = frame.replace(bytes([HDLC.ESC, HDLC.ESC  ^ HDLC.ESC_MASK]), bytes([HDLC.ESC]))
+                    if len(frame) > RNS.Reticulum.HEADER_MINSIZE:
+                        self.process_incoming(frame)
+                    self.frame_buffer = self.frame_buffer[frame_end:]
+                else:
+                    flags_remaining = False
+            else:
+                flags_remaining = False
+
+    def receive(self, data_in):
+        try:
+            if len(data_in) > 0: self.handle_hdlc(data_in)
+            else:
+                self.online = False
+                if self.is_connected_to_shared_instance and not self.detached:
+                    RNS.log("Socket for "+str(self)+" was closed, attempting to reconnect...", RNS.LOG_WARNING)
+                    RNS.Transport.shared_connection_disappeared()
+                    self.reconnect()
+                else:
+                    self.teardown(nowarning=True)
+                
+        except Exception as e:
+            self.online = False
+            RNS.log("An interface error occurred, the contained exception was: "+str(e), RNS.LOG_ERROR)
+            RNS.log("Tearing down "+str(self), RNS.LOG_ERROR)
+            self.teardown()
 
     def read_loop(self):
         try:
-            in_frame = False
-            escape = False
-            data_buffer = b""
-
+            self.frame_buffer = b""
+            data_in = b""
             while True:
                 data_in = self.socket.recv(4096)
-                if len(data_in) > 0:
-                    pointer = 0
-                    while pointer < len(data_in):
-                        byte = data_in[pointer]
-                        pointer += 1
-                        if (in_frame and byte == HDLC.FLAG):
-                            in_frame = False
-                            self.process_incoming(data_buffer)
-                        elif (byte == HDLC.FLAG):
-                            in_frame = True
-                            data_buffer = b""
-                        elif (in_frame and len(data_buffer) < self.HW_MTU):
-                            if (byte == HDLC.ESC):
-                                escape = True
-                            else:
-                                if (escape):
-                                    if (byte == HDLC.FLAG ^ HDLC.ESC_MASK):
-                                        byte = HDLC.FLAG
-                                    if (byte == HDLC.ESC  ^ HDLC.ESC_MASK):
-                                        byte = HDLC.ESC
-                                    escape = False
-                                data_buffer = data_buffer+bytes([byte])
+                if len(data_in) > 0: self.handle_hdlc(data_in)
                 else:
                     self.online = False
                     if self.is_connected_to_shared_instance and not self.detached:
@@ -234,7 +282,6 @@ class LocalClientInterface(Interface):
 
                     break
 
-                
         except Exception as e:
             self.online = False
             RNS.log("An interface error occurred, the contained exception was: "+str(e), RNS.LOG_ERROR)
@@ -249,12 +296,14 @@ class LocalClientInterface(Interface):
                     self.detached = True
                     
                     try:
-                        self.socket.shutdown(socket.SHUT_RDWR)
+                        if self.socket != None:
+                            self.socket.shutdown(socket.SHUT_RDWR)
                     except Exception as e:
                         RNS.log("Error while shutting down socket for "+str(self)+": "+str(e))
 
                     try:
-                        self.socket.close()
+                        if self.socket != None:
+                            self.socket.close()
                     except Exception as e:
                         RNS.log("Error while closing socket for "+str(self)+": "+str(e))
 
@@ -288,67 +337,113 @@ class LocalClientInterface(Interface):
 
 
     def __str__(self):
-        return "LocalInterface["+str(self.target_port)+"]"
+        if self.socket_path: return "LocalInterface["+str(self.socket_path.replace("\0", ""))+"]"
+        else: return "LocalInterface["+str(self.target_port)+"]"
 
 
 class LocalServerInterface(Interface):
+    AUTOCONFIGURE_MTU = True
 
-    def __init__(self, owner, bindport=None):
+    def __init__(self, owner, bindport=None, socket_path=None):
         super().__init__()
+        self.epoll_backend = False
         self.online = False
         self.clients = 0
+        
+        if socket_path != None and RNS.Reticulum.get_instance().use_af_unix: self.socket_path = f"\0rns/{socket_path}"
+        else: self.socket_path = None
         
         self.IN  = True
         self.OUT = False
         self.name = "Reticulum"
         self.mode = RNS.Interfaces.Interface.Interface.MODE_FULL
 
-        if (bindport != None):
+        if RNS.vendor.platformutils.use_epoll():
+            self.epoll_backend = True
+
+        if socket_path != None and self.epoll_backend:
+            self.receives = True
+            self.bind_ip = None
+            self.bind_port = None
+
+            self.owner = owner
+            self.is_local_shared_instance = True
+            BackboneInterface.add_listener(self, self.socket_path, socket_type=socket.AF_UNIX)
+
+        elif bindport != None:
             self.receives = True
             self.bind_ip = "127.0.0.1"
             self.bind_port = bindport
-
-            def handlerFactory(callback):
-                def createHandler(*args, **keys):
-                    return LocalInterfaceHandler(callback, *args, **keys)
-                return createHandler
 
             self.owner = owner
             self.is_local_shared_instance = True
 
             address = (self.bind_ip, self.bind_port)
+            if self.epoll_backend: BackboneInterface.add_listener(self, address)
+            else:
+                def handlerFactory(callback):
+                    def createHandler(*args, **keys):
+                        return LocalInterfaceHandler(callback, *args, **keys)
+                    return createHandler
 
-            self.server = ThreadingTCPServer(address, handlerFactory(self.incoming_connection))
+                self.server = ThreadingTCPServer(address, handlerFactory(self.incoming_connection))
+                self.server.daemon_threads = True
+                thread = threading.Thread(target=self.server.serve_forever)
+                thread.daemon = True
+                thread.start()
 
-            thread = threading.Thread(target=self.server.serve_forever)
-            thread.daemon = True
-            thread.start()
+        self.announce_rate_target  = None
+        self.announce_rate_grace   = None
+        self.announce_rate_penalty = None
 
-            self.announce_rate_target  = None
-            self.announce_rate_grace   = None
-            self.announce_rate_penalty = None
-
-            self.bitrate = 1000*1000*1000
-            self.online = True
-
-
+        self.bitrate = 1000*1000*1000
+        self.online = True
 
     def incoming_connection(self, handler):
-        interface_name = str(str(handler.client_address[1]))
-        spawned_interface = LocalClientInterface(self.owner, name=interface_name, connected_socket=handler.request)
-        spawned_interface.OUT = self.OUT
-        spawned_interface.IN  = self.IN
-        spawned_interface.target_ip = handler.client_address[0]
-        spawned_interface.target_port = str(handler.client_address[1])
-        spawned_interface.parent_interface = self
-        spawned_interface.bitrate = self.bitrate
-        if hasattr(self, "_force_bitrate"):
-            spawned_interface._force_bitrate = self._force_bitrate
-        # RNS.log("Accepting new connection to shared instance: "+str(spawned_interface), RNS.LOG_EXTREME)
-        RNS.Transport.interfaces.append(spawned_interface)
-        RNS.Transport.local_client_interfaces.append(spawned_interface)
-        self.clients += 1
-        spawned_interface.read_loop()
+        if self.epoll_backend:
+            client_socket = handler
+            if client_socket.family == socket.AF_INET:
+                interface_name = str(str(client_socket.getpeername()[1]))
+            elif client_socket.family == socket.AF_UNIX:
+                interface_name = f"{self.clients}@{self.socket_path}"
+
+            spawned_interface = LocalClientInterface(self.owner, name=interface_name, connected_socket=client_socket)
+            spawned_interface.OUT = self.OUT
+            spawned_interface.IN  = self.IN
+            spawned_interface.socket = client_socket
+            spawned_interface.parent_interface = self
+            spawned_interface.bitrate = self.bitrate
+
+            if client_socket.family == socket.AF_INET:
+                spawned_interface.target_ip = client_socket.getpeername()[0]
+                spawned_interface.target_port = str(client_socket.getpeername()[1])
+
+            elif client_socket.family == socket.AF_UNIX:
+                spawned_interface.target_ip = None
+                spawned_interface.target_port = interface_name
+                spawned_interface.socket_path = self.socket_path
+
+            if hasattr(self, "_force_bitrate"): spawned_interface._force_bitrate = self._force_bitrate
+            RNS.Transport.interfaces.append(spawned_interface)
+            RNS.Transport.local_client_interfaces.append(spawned_interface)
+            BackboneInterface.add_client_socket(client_socket, spawned_interface)
+            self.clients += 1
+            return True
+
+        else:
+            interface_name = str(str(handler.client_address[1]))
+            spawned_interface = LocalClientInterface(self.owner, name=interface_name, connected_socket=handler.request)
+            spawned_interface.OUT = self.OUT
+            spawned_interface.IN  = self.IN
+            spawned_interface.target_ip = handler.client_address[0]
+            spawned_interface.target_port = str(handler.client_address[1])
+            spawned_interface.parent_interface = self
+            spawned_interface.bitrate = self.bitrate
+            if hasattr(self, "_force_bitrate"): spawned_interface._force_bitrate = self._force_bitrate
+            RNS.Transport.interfaces.append(spawned_interface)
+            RNS.Transport.local_client_interfaces.append(spawned_interface)
+            self.clients += 1
+            spawned_interface.read_loop()
 
     def process_outgoing(self, data):
         pass
@@ -360,7 +455,8 @@ class LocalServerInterface(Interface):
         if from_spawned: self.oa_freq_deque.append(time.time())
 
     def __str__(self):
-        return "Shared Instance["+str(self.bind_port)+"]"
+        if self.socket_path: return "Shared Instance["+str(self.socket_path.replace("\0", ""))+"]"
+        else: return "Shared Instance["+str(self.bind_port)+"]"
 
 class LocalInterfaceHandler(socketserver.BaseRequestHandler):
     def __init__(self, callback, *args, **keys):

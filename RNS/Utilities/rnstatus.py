@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2022 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -11,8 +11,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -135,7 +143,7 @@ def get_remote_status(destination_hash, include_lstats, identity, no_output=Fals
 
 def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=False, astats=False,
                   lstats=False, sorting=None, sort_reverse=False, remote=None, management_identity=None,
-                  remote_timeout=RNS.Transport.PATH_REQUEST_TIMEOUT, must_exit=True, rns_instance=None):
+                  remote_timeout=RNS.Transport.PATH_REQUEST_TIMEOUT, must_exit=True, rns_instance=None, traffic_totals=False):
     
     if remote:
         require_shared = False
@@ -228,6 +236,10 @@ def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=
                 interfaces.sort(key=lambda i: i["rxb"], reverse=not sort_reverse)
             if sorting == "tx":
                 interfaces.sort(key=lambda i: i["txb"], reverse=not sort_reverse)
+            if sorting == "rxs":
+                interfaces.sort(key=lambda i: i["rxs"], reverse=not sort_reverse)
+            if sorting == "txs":
+                interfaces.sort(key=lambda i: i["txs"], reverse=not sort_reverse)
             if sorting == "traffic":
                 interfaces.sort(key=lambda i: i["rxb"]+i["txb"], reverse=not sort_reverse)
             if sorting == "announces" or sorting == "announce":
@@ -246,6 +258,8 @@ def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=
             if dispall or not (
                 name.startswith("LocalInterface[") or
                 name.startswith("TCPInterface[Client") or
+                name.startswith("BackboneInterface[Client on") or
+                name.startswith("AutoInterfacePeer[") or
                 name.startswith("I2PInterfacePeer[Connected peer") or
                 (name.startswith("I2PInterface[") and ("i2p_connectable" in ifstat and ifstat["i2p_connectable"] == False))
                 ):
@@ -316,6 +330,12 @@ def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=
                         if "bitrate" in ifstat and ifstat["bitrate"] != None:
                             print("    Rate      : {ss}".format(ss=speed_str(ifstat["bitrate"])))
 
+                        if "noise_floor" in ifstat:
+                            if ifstat["noise_floor"] != None:
+                                print("    Noise Fl. : {nfl} dBm".format(nfl=str(ifstat["noise_floor"])))
+                            else:
+                                print("    Noise Fl. : Unknown")
+
                         if "battery_percent" in ifstat and ifstat["battery_percent"] != None:
                             try:
                                 bpi = int(ifstat["battery_percent"])
@@ -328,8 +348,8 @@ def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=
                             print("    Airtime   : {ats}% (15s), {atl}% (1h)".format(ats=str(ifstat["airtime_short"]),atl=str(ifstat["airtime_long"])))
                         
                         if "channel_load_short" in ifstat and "channel_load_long" in ifstat:
-                            print("    Ch.Load   : {ats}% (15s), {atl}% (1h)".format(ats=str(ifstat["channel_load_short"]),atl=str(ifstat["channel_load_long"])))
-                        
+                            print("    Ch. Load  : {ats}% (15s), {atl}% (1h)".format(ats=str(ifstat["channel_load_short"]),atl=str(ifstat["channel_load_long"])))
+
                         if "peers" in ifstat and ifstat["peers"] != None:
                             print("    Peers     : {np} reachable".format(np=ifstat["peers"]))
 
@@ -361,7 +381,21 @@ def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=
                             print("    Announces : {iaf}↑".format(iaf=RNS.prettyfrequency(ifstat["outgoing_announce_frequency"])))
                             print("                {iaf}↓".format(iaf=RNS.prettyfrequency(ifstat["incoming_announce_frequency"])))
 
-                        print("    Traffic   : {txb}↑\n                {rxb}↓".format(rxb=size_str(ifstat["rxb"]), txb=size_str(ifstat["txb"])))
+                        rxb_str = "↓"+RNS.prettysize(ifstat["rxb"])
+                        txb_str = "↑"+RNS.prettysize(ifstat["txb"])
+                        strdiff = len(rxb_str)-len(txb_str)
+                        if strdiff > 0:
+                            txb_str += " "*strdiff
+                        elif strdiff < 0:
+                            rxb_str += " "*-strdiff
+
+                        rxstat = rxb_str
+                        txstat = txb_str
+                        if "rxs" in ifstat and "txs" in ifstat:
+                            rxstat += "  "+RNS.prettyspeed(ifstat["rxs"])
+                            txstat += "  "+RNS.prettyspeed(ifstat["txs"])
+                        
+                        print(f"    Traffic   : {txstat}\n                {rxstat}")
 
         lstr = ""
         if link_count != None and lstats:
@@ -370,6 +404,19 @@ def program_setup(configdir, dispall=False, verbosity=0, name_filter=None, json=
                 lstr = f", {link_count} entr{ms} in link table"
             else:
                 lstr = f" {link_count} entr{ms} in link table"
+
+        if traffic_totals:
+            rxb_str = "↓"+RNS.prettysize(stats["rxb"])
+            txb_str = "↑"+RNS.prettysize(stats["txb"])
+            strdiff = len(rxb_str)-len(txb_str)
+            if strdiff > 0:
+                txb_str += " "*strdiff
+            elif strdiff < 0:
+                rxb_str += " "*-strdiff
+
+            rxstat  = rxb_str+"  "+RNS.prettyspeed(stats["rxs"])
+            txstat  = txb_str+"  "+RNS.prettyspeed(stats["txs"])
+            print(f"\n Totals       : {txstat}\n                {rxstat}")
 
         if "transport_id" in stats and stats["transport_id"] != None:
             print("\n Transport Instance "+RNS.prettyhexrep(stats["transport_id"])+" running")
@@ -424,10 +471,18 @@ def main(must_exit=True, rns_instance=None):
         )
         
         parser.add_argument(
+            "-t",
+            "--totals",
+            action="store_true",
+            help="display traffic totals",
+            default=False,
+        )
+        
+        parser.add_argument(
             "-s",
             "--sort",
             action="store",
-            help="sort interfaces by [rate, traffic, rx, tx, announces, arx, atx, held]",
+            help="sort interfaces by [rate, traffic, rx, tx, rxs, txs, announces, arx, atx, held]",
             default=None,
             type=str
         )
@@ -501,6 +556,7 @@ def main(must_exit=True, rns_instance=None):
             remote_timeout=args.w,
             must_exit=must_exit,
             rns_instance=rns_instance,
+            traffic_totals=args.totals,
         )
 
     except KeyboardInterrupt:

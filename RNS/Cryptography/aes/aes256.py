@@ -1,17 +1,17 @@
 # MIT License
-
-# Copyright (c) 2021 Or Gur Arie
-
+#
+# Copyright (c) 2024 BoppreH
+#
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
 # in the Software without restriction, including without limitation the rights
 # to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
-
+#
 # The above copyright notice and this permission notice shall be included in all
 # copies or substantial portions of the Software.
-
+#
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 # FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -20,12 +20,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-'''
-Utils class for AES encryption / decryption
-'''
-
-## AES lookup tables
-# resource: https://en.wikipedia.org/wiki/Rijndael_S-box
 s_box = (
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
     0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0,
@@ -64,52 +58,32 @@ inv_s_box = (
     0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D,
 )
 
-
-## AES AddRoundKey
-# Round constants https://en.wikipedia.org/wiki/AES_key_schedule#Round_constants
-r_con = (
-    0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40,
-    0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D, 0x9A,
-    0x2F, 0x5E, 0xBC, 0x63, 0xC6, 0x97, 0x35, 0x6A,
-    0xD4, 0xB3, 0x7D, 0xFA, 0xEF, 0xC5, 0x91, 0x39,
-)
-
-def add_round_key(s, k):
-    for i in range(4):
-        for j in range(4):
-            s[i][j] ^= k[i][j]
-
-
-## AES SubBytes
 def sub_bytes(s):
     for i in range(4):
         for j in range(4):
             s[i][j] = s_box[s[i][j]]
-
 
 def inv_sub_bytes(s):
     for i in range(4):
         for j in range(4):
             s[i][j] = inv_s_box[s[i][j]]
 
-
-## AES ShiftRows
 def shift_rows(s):
     s[0][1], s[1][1], s[2][1], s[3][1] = s[1][1], s[2][1], s[3][1], s[0][1]
     s[0][2], s[1][2], s[2][2], s[3][2] = s[2][2], s[3][2], s[0][2], s[1][2]
     s[0][3], s[1][3], s[2][3], s[3][3] = s[3][3], s[0][3], s[1][3], s[2][3]
-
 
 def inv_shift_rows(s):
     s[0][1], s[1][1], s[2][1], s[3][1] = s[3][1], s[0][1], s[1][1], s[2][1]
     s[0][2], s[1][2], s[2][2], s[3][2] = s[2][2], s[3][2], s[0][2], s[1][2]
     s[0][3], s[1][3], s[2][3], s[3][3] = s[1][3], s[2][3], s[3][3], s[0][3]
 
+def add_round_key(s, k):
+    for i in range(4):
+        for j in range(4):
+            s[i][j] ^= k[i][j]
 
-## AES MixColumns
-# learned from http://cs.ucsb.edu/~koc/cs178/projects/JT/aes.c
 xtime = lambda a: (((a << 1) ^ 0x1B) & 0xFF) if (a & 0x80) else (a << 1)
-
 
 def mix_single_column(a):
     # see Sec 4.1.2 in The Design of Rijndael
@@ -120,11 +94,9 @@ def mix_single_column(a):
     a[2] ^= t ^ xtime(a[2] ^ a[3])
     a[3] ^= t ^ xtime(a[3] ^ u)
 
-
 def mix_columns(s):
     for i in range(4):
         mix_single_column(s[i])
-
 
 def inv_mix_columns(s):
     # see Sec 4.1.3 in The Design of Rijndael
@@ -138,22 +110,127 @@ def inv_mix_columns(s):
 
     mix_columns(s)
 
-
-## AES Bytes
-def bytes2matrix(text):
-    """ Converts a 16-byte array into a 4x4 matrix.  """
-    return [list(text[i:i+4]) for i in range(0, len(text), 4)]
-
-def matrix2bytes(matrix):
-    """ Converts a 4x4 matrix into a 16-byte array.  """
-    return bytes(sum(matrix, []))
+r_con = (
+    0x00, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40,
+    0x80, 0x1B, 0x36, 0x6C, 0xD8, 0xAB, 0x4D, 0x9A,
+    0x2F, 0x5E, 0xBC, 0x63, 0xC6, 0x97, 0x35, 0x6A,
+    0xD4, 0xB3, 0x7D, 0xFA, 0xEF, 0xC5, 0x91, 0x39,
+)
 
 
-def xor_bytes(a, b):
-    """ Returns a new byte array with the elements xor'ed. """
-    return bytes(i^j for i, j in zip(a, b))
+def bytes2matrix(text): return [list(text[i:i+4]) for i in range(0, len(text), 4)]
+def matrix2bytes(matrix): return bytes(sum(matrix, []))
+def xor_bytes(a, b): return bytes(i^j for i, j in zip(a, b))
 
+def inc_bytes(a):
+    out = list(a)
+    for i in reversed(range(len(out))):
+        if out[i] == 0xFF:
+            out[i] = 0
+        else:
+            out[i] += 1
+            break
+    return bytes(out)
 
 def split_blocks(message, block_size=16, require_padding=True):
-        assert len(message) % block_size == 0 or not require_padding
-        return [message[i:i+16] for i in range(0, len(message), block_size)]
+    assert len(message) % block_size == 0 or not require_padding
+    return [message[i:i+16] for i in range(0, len(message), block_size)]
+
+class AES256:
+    rounds_by_key_size = {32: 14}
+    def __init__(self, master_key):
+        assert len(master_key) in AES256.rounds_by_key_size
+        self.n_rounds = AES256.rounds_by_key_size[len(master_key)]
+        self._key_matrices = self._expand_key(master_key)
+
+    def _expand_key(self, master_key):
+        # Initialize round keys with raw key material.
+        key_columns = bytes2matrix(master_key)
+        iteration_size = len(master_key) // 4
+
+        i = 1
+        while len(key_columns) < (self.n_rounds + 1) * 4:
+            # Copy previous word.
+            word = list(key_columns[-1])
+
+            # Perform schedule_core once every "row".
+            if len(key_columns) % iteration_size == 0:
+                # Circular shift.
+                word.append(word.pop(0))
+                # Map to S-BOX.
+                word = [s_box[b] for b in word]
+                # XOR with first byte of R-CON, since the others bytes of R-CON are 0.
+                word[0] ^= r_con[i]
+                i += 1
+            elif len(master_key) == 32 and len(key_columns) % iteration_size == 4:
+                # Run word through S-box in the fourth iteration when using a
+                # 256-bit key.
+                word = [s_box[b] for b in word]
+
+            # XOR with equivalent word from previous iteration.
+            word = xor_bytes(word, key_columns[-iteration_size])
+            key_columns.append(word)
+
+        # Group key words in 4x4 byte matrices.
+        return [key_columns[4*i : 4*(i+1)] for i in range(len(key_columns) // 4)]
+
+    def encrypt_block(self, plaintext):
+        assert len(plaintext) == 16
+
+        plain_state = bytes2matrix(plaintext)
+
+        add_round_key(plain_state, self._key_matrices[0])
+
+        for i in range(1, self.n_rounds):
+            sub_bytes(plain_state)
+            shift_rows(plain_state)
+            mix_columns(plain_state)
+            add_round_key(plain_state, self._key_matrices[i])
+
+        sub_bytes(plain_state)
+        shift_rows(plain_state)
+        add_round_key(plain_state, self._key_matrices[-1])
+
+        return matrix2bytes(plain_state)
+
+    def decrypt_block(self, ciphertext):
+        assert len(ciphertext) == 16
+
+        cipher_state = bytes2matrix(ciphertext)
+
+        add_round_key(cipher_state, self._key_matrices[-1])
+        inv_shift_rows(cipher_state)
+        inv_sub_bytes(cipher_state)
+
+        for i in range(self.n_rounds - 1, 0, -1):
+            add_round_key(cipher_state, self._key_matrices[i])
+            inv_mix_columns(cipher_state)
+            inv_shift_rows(cipher_state)
+            inv_sub_bytes(cipher_state)
+
+        add_round_key(cipher_state, self._key_matrices[0])
+
+        return matrix2bytes(cipher_state)
+
+    def encrypt_cbc(self, plaintext, iv):
+        if len(iv) != 16: raise ValueError(f"Invalid IV length: {len(iv)}")
+        blocks = []
+        previous = iv
+        for plaintext_block in split_blocks(plaintext):
+            block = self.encrypt_block(xor_bytes(plaintext_block, previous))
+            blocks.append(block)
+            previous = block
+
+        return b''.join(blocks)
+
+    def decrypt_cbc(self, ciphertext, iv):
+        if len(iv) != 16: raise ValueError(f"Invalid IV length: {len(iv)}")
+        blocks = []
+        previous = iv
+        for ciphertext_block in split_blocks(ciphertext):
+            blocks.append(xor_bytes(previous, self.decrypt_block(ciphertext_block)))
+            previous = ciphertext_block
+
+        return b''.join(blocks)
+
+__all__ = ["AES256"]

@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2024 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -26,6 +34,7 @@ if get_platform() == "android":
     from .Interfaces import Interface
     from .Interfaces import LocalInterface
     from .Interfaces import AutoInterface
+    from .Interfaces import BackboneInterface
     from .Interfaces import TCPInterface
     from .Interfaces import UDPInterface
     from .Interfaces import I2PInterface
@@ -40,8 +49,9 @@ else:
 from RNS.vendor.configobj import ConfigObj
 import configparser
 import multiprocessing.connection
-import signal
+import importlib.util
 import threading
+import signal
 import atexit
 import struct
 import array
@@ -89,6 +99,16 @@ class Reticulum:
 
     Unless you really know what you are doing, the MTU should be left at
     the default value.
+    """
+
+    LINK_MTU_DISCOVERY   = True
+    """
+    Whether automatic link MTU discovery is enabled by default in this
+    release. Link MTU discovery significantly increases throughput over
+    fast links, but requires all intermediary hops to also support it.
+    Support for this feature was added in RNS version 0.9.0. This option
+    will become enabled by default in the near future. Please update your
+    RNS instances.
     """
 
     MAX_QUEUED_ANNOUNCES = 16384
@@ -153,31 +173,38 @@ class Reticulum:
     interfacepath    = ""
 
     __instance       = None
-    
+
+    __interface_detach_ran = False
+    __exit_handler_ran = False
     @staticmethod
     def exit_handler():
         # This exit handler is called whenever Reticulum is asked to
         # shut down, and will in turn call exit handlers in other
         # classes, saving necessary information to disk and carrying
         # out cleanup operations.
+        if not Reticulum.__exit_handler_ran:
+            Reticulum.__exit_handler_ran = True
+            if not Reticulum.__interface_detach_ran:
+                RNS.Transport.detach_interfaces()
+            RNS.Transport.exit_handler()
+            RNS.Identity.exit_handler()
 
-        RNS.Transport.exit_handler()
-        RNS.Identity.exit_handler()
+            if RNS.Profiler.ran():
+                RNS.Profiler.results()
 
-        if RNS.profiler_ran:
-            RNS.profiler_results()
+            RNS.loglevel = -1
 
     @staticmethod
     def sigint_handler(signal, frame):
         RNS.Transport.detach_interfaces()
+        Reticulum.__interface_detach_ran = True
         RNS.exit()
-
 
     @staticmethod
     def sigterm_handler(signal, frame):
         RNS.Transport.detach_interfaces()
+        Reticulum.__interface_detach_ran = True
         RNS.exit()
-
 
     @staticmethod
     def get_instance():
@@ -186,7 +213,8 @@ class Reticulum:
         """
         return Reticulum.__instance
 
-    def __init__(self,configdir=None, loglevel=None, logdest=None, verbosity=None, require_shared_instance=False):
+    def __init__(self,configdir=None, loglevel=None, logdest=None, verbosity=None,
+                 require_shared_instance=False, shared_instance_type=None):
         """
         Initialises and starts a Reticulum instance. This must be
         done before any other operations, and Reticulum will not
@@ -227,6 +255,7 @@ class Reticulum:
         Reticulum.interfacepath = Reticulum.configdir+"/interfaces"
 
         Reticulum.__transport_enabled = False
+        Reticulum.__link_mtu_discovery = Reticulum.LINK_MTU_DISCOVERY
         Reticulum.__remote_management_enabled = False
         Reticulum.__use_implicit_proof = True
         Reticulum.__allow_probes = False
@@ -235,9 +264,13 @@ class Reticulum:
 
         self.local_interface_port = 37428
         self.local_control_port   = 37429
+        self.local_socket_path    = None
         self.share_instance       = True
+        self.shared_instance_type = shared_instance_type
         self.rpc_listener         = None
         self.rpc_key              = None
+        self.rpc_type             = "AF_INET"
+        self.use_af_unix          = False
 
         self.ifac_salt = Reticulum.IFAC_SALT
 
@@ -252,6 +285,7 @@ class Reticulum:
             RNS.loglevel = self.requested_loglevel
 
         self.is_shared_instance = False
+        self.shared_instance_interface = None
         self.require_shared = require_shared_instance
         self.is_connected_to_shared_instance = False
         self.is_standalone_instance = False
@@ -264,6 +298,9 @@ class Reticulum:
 
         if not os.path.isdir(Reticulum.cachepath):
             os.makedirs(Reticulum.cachepath)
+
+        if not os.path.isdir(os.path.join(Reticulum.cachepath, "announces")):
+            os.makedirs(os.path.join(Reticulum.cachepath, "announces"))
 
         if not os.path.isdir(Reticulum.resourcepath):
             os.makedirs(Reticulum.resourcepath)
@@ -288,19 +325,24 @@ class Reticulum:
             time.sleep(1.5)
 
         self.__apply_config()
-        RNS.log(f"Utilising cryptography backend \"{RNS.Cryptography.Provider.backend()}\"", RNS.LOG_VERBOSE)
+        RNS.log(f"Utilising cryptography backend \"{RNS.Cryptography.Provider.backend()}\"", RNS.LOG_DEBUG)
         RNS.log(f"Configuration loaded from {self.configpath}", RNS.LOG_VERBOSE)
-        
-        RNS.Identity.load_known_destinations()
 
+        RNS.Identity.load_known_destinations()
         RNS.Transport.start(self)
 
-        self.rpc_addr = ("127.0.0.1", self.local_control_port)
+        if self.use_af_unix:
+            self.rpc_addr = f"\0rns/{self.local_socket_path}/rpc"
+            self.rpc_type = "AF_UNIX"
+        else:
+            self.rpc_addr = ("127.0.0.1", self.local_control_port)
+            self.rpc_type = "AF_INET"
+
         if self.rpc_key == None:
             self.rpc_key  = RNS.Identity.full_hash(RNS.Transport.identity.get_private_key())
         
         if self.is_shared_instance:
-            self.rpc_listener = multiprocessing.connection.Listener(self.rpc_addr, authkey=self.rpc_key)
+            self.rpc_listener = multiprocessing.connection.Listener(self.rpc_addr, family=self.rpc_type, authkey=self.rpc_key)
             thread = threading.Thread(target=self.rpc_loop)
             thread.daemon = True
             thread.start()
@@ -334,13 +376,15 @@ class Reticulum:
             try:
                 interface = LocalInterface.LocalServerInterface(
                     RNS.Transport,
-                    self.local_interface_port
+                    self.local_interface_port,
+                    socket_path=self.local_socket_path
                 )
                 interface.OUT = True
                 if hasattr(Reticulum, "_force_shared_instance_bitrate"):
                     interface.bitrate = Reticulum._force_shared_instance_bitrate
                     interface._force_bitrate = Reticulum._force_shared_instance_bitrate
                     RNS.log(f"Forcing shared instance bitrate of {RNS.prettyspeed(interface.bitrate)}", RNS.LOG_WARNING)
+                    interface.optimise_mtu()
                 
                 if self.require_shared == True:
                     interface.detach()
@@ -349,6 +393,7 @@ class Reticulum:
 
                 else:
                     RNS.Transport.interfaces.append(interface)
+                    self.shared_instance_interface = interface
                     self.is_shared_instance = True
                     RNS.log("Started shared instance interface: "+str(interface), RNS.LOG_DEBUG)
                     self.__start_jobs()
@@ -358,13 +403,15 @@ class Reticulum:
                     interface = LocalInterface.LocalClientInterface(
                         RNS.Transport,
                         "Local shared instance",
-                        self.local_interface_port)
+                        self.local_interface_port,
+                        socket_path=self.local_socket_path)
                     interface.target_port = self.local_interface_port
                     interface.OUT = True
                     if hasattr(Reticulum, "_force_shared_instance_bitrate"):
                         interface.bitrate = Reticulum._force_shared_instance_bitrate
                         interface._force_bitrate = True
                         RNS.log(f"Forcing shared instance bitrate of {RNS.prettyspeed(interface.bitrate)}", RNS.LOG_WARNING)
+                        interface.optimise_mtu()
                     RNS.Transport.interfaces.append(interface)
                     self.is_shared_instance = False
                     self.is_standalone_instance = False
@@ -408,6 +455,15 @@ class Reticulum:
                 if option == "share_instance":
                     value = self.config["reticulum"].as_bool(option)
                     self.share_instance = value
+                if RNS.vendor.platformutils.use_af_unix():
+                    if option == "instance_name":
+                        value = self.config["reticulum"][option]
+                        self.local_socket_path = value
+                if option == "shared_instance_type":
+                    if self.shared_instance_type == None:
+                        value = self.config["reticulum"][option].lower()
+                        if value in ["tcp", "unix"]:
+                            self.shared_instance_type = value
                 if option == "shared_instance_port":
                     value = int(self.config["reticulum"][option])
                     self.local_interface_port = value
@@ -425,6 +481,10 @@ class Reticulum:
                     v = self.config["reticulum"].as_bool(option)
                     if v == True:
                         Reticulum.__transport_enabled = True
+                if option == "link_mtu_discovery":
+                    v = self.config["reticulum"].as_bool(option)
+                    if v == True:
+                        Reticulum.__link_mtu_discovery = True
                 if option == "enable_remote_management":
                     v = self.config["reticulum"].as_bool(option)
                     if v == True:
@@ -459,6 +519,19 @@ class Reticulum:
                         Reticulum.__use_implicit_proof = True
                     if v == False:
                         Reticulum.__use_implicit_proof = False
+
+        if RNS.compiled: RNS.log("Reticulum running in compiled mode", RNS.LOG_DEBUG)
+        else: RNS.log("Reticulum running in interpreted mode", RNS.LOG_DEBUG)
+
+        if RNS.vendor.platformutils.use_af_unix():
+            if self.shared_instance_type == "tcp": self.use_af_unix = False
+            else:                                  self.use_af_unix = True
+        else:
+            self.shared_instance_type = "tcp"
+            self.use_af_unix          = False
+
+        if self.local_socket_path == None and self.use_af_unix:
+            self.local_socket_path = "default"
 
         self.__start_local_interface()
 
@@ -582,6 +655,7 @@ class Reticulum:
                                     interface.announce_cap = announce_cap
                                     if configured_bitrate:
                                         interface.bitrate = configured_bitrate
+                                    interface.optimise_mtu()
                                     if ifac_size != None:
                                         interface.ifac_size = ifac_size
                                     else:
@@ -626,6 +700,7 @@ class Reticulum:
                                         interface.start()
 
                                     RNS.Transport.interfaces.append(interface)
+                                    interface.final_init()
 
                             interface = None
                             if (("interface_enabled" in c) and c.as_bool("interface_enabled") == True) or (("enabled" in c) and c.as_bool("enabled") == True):
@@ -638,31 +713,34 @@ class Reticulum:
                                     interface = AutoInterface.AutoInterface(RNS.Transport, interface_config)
                                     interface_post_init(interface)
 
+                                if c["type"] == "BackboneInterface" or c["type"] == "BackboneClientInterface":
+                                    if "port" in c: c["listen_port"] = c["port"]
+                                    if "port" in c: c["target_port"] = c["port"]
+                                    if "remote" in c: c["target_host"] = c["remote"]
+                                    if "listen_on" in c: c["listen_ip"] = c["listen_on"]
+
+                                if c["type"] == "BackboneInterface":
+                                    if "target_host" in c: interface = BackboneInterface.BackboneClientInterface(RNS.Transport, interface_config)
+                                    else: interface = BackboneInterface.BackboneInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
+                                if c["type"] == "BackboneClientInterface":
+                                    interface = BackboneInterface.BackboneClientInterface(RNS.Transport, interface_config)
+                                    interface_post_init(interface)
+
                                 if c["type"] == "UDPInterface":
                                     interface = UDPInterface.UDPInterface(RNS.Transport, interface_config)
                                     interface_post_init(interface)
 
                                 if c["type"] == "TCPServerInterface":
-                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
-                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
-                                        interface_mode = Interface.Interface.MODE_FULL
-
                                     interface = TCPInterface.TCPServerInterface(RNS.Transport, interface_config)
                                     interface_post_init(interface)
 
                                 if c["type"] == "TCPClientInterface":
-                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
-                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
-                                        interface_mode = Interface.Interface.MODE_FULL
-                                    
                                     interface = TCPInterface.TCPClientInterface(RNS.Transport, interface_config)
                                     interface_post_init(interface)
 
                                 if c["type"] == "I2PInterface":
-                                    if interface_mode == Interface.Interface.MODE_ACCESS_POINT:
-                                        RNS.log(str(interface)+" does not support Access Point mode, reverting to default mode: Full", RNS.LOG_WARNING)
-                                        interface_mode = Interface.Interface.MODE_FULL
-
                                     interface_config["storagepath"] = Reticulum.storagepath
                                     interface_config["ifac_netname"] = ifac_netname
                                     interface_config["ifac_netkey"] = ifac_netkey
@@ -747,6 +825,7 @@ class Reticulum:
 
                 if configured_bitrate:
                     interface.bitrate = configured_bitrate
+                interface.optimise_mtu()
 
                 if ifac_size != None:
                     interface.ifac_size = ifac_size
@@ -782,6 +861,7 @@ class Reticulum:
                     interface.ifac_signature = interface.ifac_identity.sign(RNS.Identity.full_hash(interface.ifac_key))
 
                 RNS.Transport.interfaces.append(interface)
+                interface.final_init()
 
     def _should_persist_data(self):
         if time.time() > self.last_data_persist+Reticulum.GRACIOUS_PERSIST_INTERVAL:
@@ -887,9 +967,11 @@ class Reticulum:
             except Exception as e:
                 RNS.log("An error ocurred while handling RPC call from local client: "+str(e), RNS.LOG_ERROR)
 
+    def get_rpc_client(self): return multiprocessing.connection.Client(self.rpc_addr, family=self.rpc_type, authkey=self.rpc_key)
+
     def get_interface_stats(self):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "interface_stats"})
             response = rpc_connection.recv()
             return response
@@ -944,6 +1026,9 @@ class Reticulum:
                 if hasattr(interface, "r_channel_load_long"):
                     ifstats["channel_load_long"] = interface.r_channel_load_long
 
+                if hasattr(interface, "r_noise_floor"):
+                    ifstats["noise_floor"] = interface.r_noise_floor
+
                 if hasattr(interface, "r_battery_state"):
                     if interface.r_battery_state != 0x00:
                         ifstats["battery_state"] = interface.get_battery_state_string()
@@ -956,6 +1041,22 @@ class Reticulum:
                         ifstats["bitrate"] = interface.bitrate
                     else:
                         ifstats["bitrate"] = None
+
+                if hasattr(interface, "current_rx_speed"):
+                    if interface.current_rx_speed != None:
+                        ifstats["rxs"] = interface.current_rx_speed
+                    else:
+                        ifstats["rxs"] = 0
+                else:
+                    ifstats["rxs"] = 0
+
+                if hasattr(interface, "current_tx_speed"):
+                    if interface.current_tx_speed != None:
+                        ifstats["txs"] = interface.current_tx_speed
+                    else:
+                        ifstats["txs"] = 0
+                else:
+                    ifstats["txs"] = 0
 
                 if hasattr(interface, "peers"):
                     if interface.peers != None:
@@ -994,6 +1095,10 @@ class Reticulum:
 
             stats = {}
             stats["interfaces"] = interfaces
+            stats["rxb"] = RNS.Transport.traffic_rxb
+            stats["txb"] = RNS.Transport.traffic_txb
+            stats["rxs"] = RNS.Transport.speed_rx
+            stats["txs"] = RNS.Transport.speed_tx
             if Reticulum.transport_enabled():
                 stats["transport_id"] = RNS.Transport.identity.hash
                 stats["transport_uptime"] = time.time()-RNS.Transport.start_time
@@ -1002,27 +1107,34 @@ class Reticulum:
                 else:
                     stats["probe_responder"] = None
 
+            if importlib.util.find_spec('psutil') != None:
+                import psutil
+                process = psutil.Process()
+                stats["rss"] = process.memory_info().rss
+            else:
+                stats["rss"] = None
+
             return stats
 
     def get_path_table(self, max_hops=None):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "path_table", "max_hops": max_hops})
             response = rpc_connection.recv()
             return response
 
         else:
             path_table = []
-            for dst_hash in RNS.Transport.destination_table:
-                path_hops = RNS.Transport.destination_table[dst_hash][2]
+            for dst_hash in RNS.Transport.path_table:
+                path_hops = RNS.Transport.path_table[dst_hash][2]
                 if max_hops == None or path_hops <= max_hops:
                     entry = {
                         "hash": dst_hash,
-                        "timestamp": RNS.Transport.destination_table[dst_hash][0],
-                        "via": RNS.Transport.destination_table[dst_hash][1],
+                        "timestamp": RNS.Transport.path_table[dst_hash][0],
+                        "via": RNS.Transport.path_table[dst_hash][1],
                         "hops": path_hops,
-                        "expires": RNS.Transport.destination_table[dst_hash][3],
-                        "interface": str(RNS.Transport.destination_table[dst_hash][5]),
+                        "expires": RNS.Transport.path_table[dst_hash][3],
+                        "interface": str(RNS.Transport.path_table[dst_hash][5]),
                     }
                     path_table.append(entry)
 
@@ -1030,7 +1142,7 @@ class Reticulum:
 
     def get_rate_table(self):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "rate_table"})
             response = rpc_connection.recv()
             return response
@@ -1051,7 +1163,7 @@ class Reticulum:
 
     def drop_path(self, destination):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"drop": "path", "destination_hash": destination})
             response = rpc_connection.recv()
             return response
@@ -1061,15 +1173,15 @@ class Reticulum:
 
     def drop_all_via(self, transport_hash):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"drop": "all_via", "destination_hash": transport_hash})
             response = rpc_connection.recv()
             return response
 
         else:
             dropped_count = 0
-            for destination_hash in RNS.Transport.destination_table:
-                if RNS.Transport.destination_table[destination_hash][1] == transport_hash:
+            for destination_hash in RNS.Transport.path_table:
+                if RNS.Transport.path_table[destination_hash][1] == transport_hash:
                     RNS.Transport.expire_path(destination_hash)
                     dropped_count += 1
 
@@ -1077,7 +1189,7 @@ class Reticulum:
 
     def drop_announce_queues(self):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"drop": "announce_queues"})
             response = rpc_connection.recv()
             return response
@@ -1087,7 +1199,7 @@ class Reticulum:
 
     def get_next_hop_if_name(self, destination):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "next_hop_if_name", "destination_hash": destination})
             response = rpc_connection.recv()
             return response
@@ -1098,7 +1210,7 @@ class Reticulum:
     def get_first_hop_timeout(self, destination):
         if self.is_connected_to_shared_instance:
             try:
-                rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+                rpc_connection = self.get_rpc_client()
                 rpc_connection.send({"get": "first_hop_timeout", "destination_hash": destination})
                 response = rpc_connection.recv()
 
@@ -1117,13 +1229,9 @@ class Reticulum:
 
     def get_next_hop(self, destination):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "next_hop", "destination_hash": destination})
             response = rpc_connection.recv()
-
-            # TODO: Remove this debugging function
-            # if not response:
-            #     response = RNS.Transport.next_hop(destination)
 
             return response
 
@@ -1132,7 +1240,7 @@ class Reticulum:
 
     def get_link_count(self):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "link_count"})
             response = rpc_connection.recv()
             return response
@@ -1142,7 +1250,7 @@ class Reticulum:
 
     def get_packet_rssi(self, packet_hash):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "packet_rssi", "packet_hash": packet_hash})
             response = rpc_connection.recv()
             return response
@@ -1156,7 +1264,7 @@ class Reticulum:
 
     def get_packet_snr(self, packet_hash):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "packet_snr", "packet_hash": packet_hash})
             response = rpc_connection.recv()
             return response
@@ -1170,7 +1278,7 @@ class Reticulum:
 
     def get_packet_q(self, packet_hash):
         if self.is_connected_to_shared_instance:
-            rpc_connection = multiprocessing.connection.Client(self.rpc_addr, authkey=self.rpc_key)
+            rpc_connection = self.get_rpc_client()
             rpc_connection.send({"get": "packet_q", "packet_hash": packet_hash})
             response = rpc_connection.recv()
             return response
@@ -1213,6 +1321,20 @@ class Reticulum:
         :returns: True if Transport is enabled, False if not.
         """
         return Reticulum.__transport_enabled
+
+    @staticmethod
+    def link_mtu_discovery():
+        """
+        Returns whether link MTU discovery is enabled for the running
+        instance.
+
+        When link MTU discovery is enabled, Reticulum will
+        automatically upgrade link MTUs to the highest supported
+        value, increasing transfer speed and efficiency.
+
+        :returns: True if link MTU discovery is enabled, False if not.
+        """
+        return Reticulum.__link_mtu_discovery
 
     @staticmethod
     def remote_management_enabled():
@@ -1268,12 +1390,24 @@ share_instance = Yes
 
 # If you want to run multiple *different* shared instances
 # on the same system, you will need to specify different
-# shared instance ports for each. The defaults are given
-# below, and again, these options can be left out if you
-# don't need them.
+# instance names for each. On platforms supporting domain
+# sockets, this can be done with the instance_name option:
 
-shared_instance_port = 37428
-instance_control_port = 37429
+instance_name = default
+
+# Some platforms don't support domain sockets, and if that
+# is the case, you can isolate different instances by
+# specifying a unique set of ports for each:
+
+# shared_instance_port = 37428
+# instance_control_port = 37429
+
+
+# If you want to explicitly use TCP for shared instance
+# communication, instead of domain sockets, this is also
+# possible, by using the following option:
+
+# shared_instance_type = tcp
 
 
 # You can configure Reticulum to panic and forcibly close
@@ -1282,7 +1416,7 @@ instance_control_port = 37429
 # an optional directive, and can be left out for brevity.
 # This behaviour is disabled by default.
 
-panic_on_interface_error = No
+# panic_on_interface_error = No
 
 
 [logging]

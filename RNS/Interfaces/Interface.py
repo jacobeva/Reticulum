@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -64,13 +72,21 @@ class Interface:
     IC_BURST_PENALTY         = 5*60
     IC_HELD_RELEASE_INTERVAL = 30
 
-    def __init__(self):
-        self.rxb = 0
-        self.txb = 0
-        self.created = time.time()
-        self.online = False
-        self.bitrate = 1e6
+    AUTOCONFIGURE_MTU = False
+    FIXED_MTU         = False
 
+    def __init__(self):
+        self.rxb      = 0
+        self.txb      = 0
+        self.created  = time.time()
+        self.detached = False
+        self.online   = False
+        self.bitrate  = 62500
+        self.HW_MTU   = None
+
+        self.parent_interface = None
+        self.spawned_interfaces = None
+        self.tunnel_id = None
         self.ingress_control = True
         self.ic_max_held_announces = Interface.MAX_HELD_ANNOUNCES
         self.ic_burst_hold = Interface.IC_BURST_HOLD
@@ -117,6 +133,33 @@ class Interface:
         else:
             return False
 
+    def optimise_mtu(self):
+        if self.AUTOCONFIGURE_MTU:
+            if self.bitrate   >= 1_000_000_000:
+                self.HW_MTU = 524288
+            elif self.bitrate > 750_000_000:
+                self.HW_MTU = 262144
+            elif self.bitrate > 400_000_000:
+                self.HW_MTU = 131072
+            elif self.bitrate > 200_000_000:
+                self.HW_MTU = 65536
+            elif self.bitrate > 100_000_000:
+                self.HW_MTU = 32768
+            elif self.bitrate > 10_000_000:
+                self.HW_MTU = 16384
+            elif self.bitrate > 5_000_000:
+                self.HW_MTU = 8192
+            elif self.bitrate > 2_000_000:
+                self.HW_MTU = 4096
+            elif self.bitrate > 1_000_000:
+                self.HW_MTU = 2048
+            elif self.bitrate > 62_500:
+                self.HW_MTU = 1024
+            else:
+                self.HW_MTU = None
+
+        RNS.log(f"{self} hardware MTU set to {self.HW_MTU}", RNS.LOG_DEBUG) # TODO: Remove debug
+
     def age(self):
         return time.time()-self.created
 
@@ -152,12 +195,12 @@ class Interface:
             RNS.log("An error occurred while processing held announces for "+str(self), RNS.LOG_ERROR)
             RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
 
-    def received_announce(self):
+    def received_announce(self, from_spawned=False):
         self.ia_freq_deque.append(time.time())
         if hasattr(self, "parent_interface") and self.parent_interface != None:
             self.parent_interface.received_announce(from_spawned=True)
 
-    def sent_announce(self):
+    def sent_announce(self, from_spawned=False):
         self.oa_freq_deque.append(time.time())
         if hasattr(self, "parent_interface") and self.parent_interface != None:
             self.parent_interface.sent_announce(from_spawned=True)
@@ -237,6 +280,9 @@ class Interface:
                 self.announce_queue = []
                 RNS.log("Error while processing announce queue on "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
                 RNS.log("The announce queue for this interface has been cleared.", RNS.LOG_ERROR)
+
+    def final_init(self):
+        pass
 
     def detach(self):
         pass

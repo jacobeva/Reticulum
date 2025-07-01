@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2024 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -35,10 +43,10 @@ class Packet:
 
     For ``RNS.Destination.GROUP`` destinations, Reticulum will use the
     pre-shared key configured for the destination. All packets to group
-    destinations are encrypted with the same AES-128 key.
+    destinations are encrypted with the same AES-256 key.
 
     For ``RNS.Destination.SINGLE`` destinations, Reticulum will use a newly
-    derived ephemeral AES-128 key for every packet.
+    derived ephemeral AES-256 key for every packet.
 
     For :ref:`RNS.Link<api-link>` destinations, Reticulum will use per-link
     ephemeral keys, and offers **Forward Secrecy**.
@@ -106,6 +114,11 @@ class Packet:
 
     TIMEOUT_PER_HOP = RNS.Reticulum.DEFAULT_PER_HOP_TIMEOUT
 
+    __slots__  = "hops", "header", "header_type", "packet_type", "transport_type", "context", "context_flag", "destination"
+    __slots__ += "transport_id", "data", "flags", "raw", "packed", "sent", "create_receipt", "receipt", "fromPacked", "MTU"
+    __slots__ += "sent_at", "packet_hash", "ratchet_id", "attached_interface", "receiving_interface", "rssi", "snr", "q"
+    __slots__ += "ciphertext", "plaintext", "destination_hash", "destination_type", "link", "map_hash"
+
     def __init__(self, destination, data, packet_type = DATA, context = NONE, transport_type = RNS.Transport.BROADCAST,
                  header_type = HEADER_1, transport_id = None, attached_interface = None, create_receipt = True, context_flag=FLAG_UNSET):
 
@@ -137,7 +150,11 @@ class Packet:
             self.fromPacked     = True
             self.create_receipt = False
 
-        self.MTU         = RNS.Reticulum.MTU
+        if destination and destination.type == RNS.Destination.LINK:
+            self.MTU     = destination.mtu
+        else:
+            self.MTU     = RNS.Reticulum.MTU
+
         self.sent_at     = None
         self.packet_hash = None
         self.ratchet_id  = None
@@ -262,7 +279,11 @@ class Packet:
         if not self.sent:
             if self.destination.type == RNS.Destination.LINK:
                 if self.destination.status == RNS.Link.CLOSED:
-                    raise IOError("Attempt to transmit over a closed link")
+                    RNS.log("Attempt to transmit over a closed link, dropping packet", RNS.LOG_DEBUG)
+                    self.sent = False
+                    self.receipt = None
+                    return False
+
                 else:
                     self.destination.last_outbound = time.time()
                     self.destination.tx += 1

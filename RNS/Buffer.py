@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -45,7 +53,8 @@ class StreamDataMessage(MessageBase):
     The stream id is limited to 2 bytes - 2 bit
     """
 
-    MAX_DATA_LEN = RNS.Link.MDU - 2 - 6  # 2 for stream data message header, 6 for channel envelope
+    OVERHEAD     = 2 + 6  # 2 for stream data message header, 6 for channel envelope
+    MAX_DATA_LEN = RNS.Link.MDU - OVERHEAD
     """
     When the Buffer package is imported, this value is
     calculcated based on the value of OVERHEAD
@@ -215,6 +224,7 @@ class RawChannelWriter(RawIOBase, AbstractContextManager):
         self._stream_id = stream_id
         self._channel = channel
         self._eof = False
+        self._mdu = channel.mdu - StreamDataMessage.OVERHEAD
 
     def write(self, __b: bytes) -> int | None:
         try:

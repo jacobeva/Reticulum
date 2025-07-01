@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -55,6 +63,7 @@ class KISS():
     CMD_STAT_CHTM   = 0x25
     CMD_STAT_PHYPRM = 0x26
     CMD_STAT_BAT    = 0x27
+    CMD_STAT_CSMA   = 0x28
     CMD_BLINK       = 0x30
     CMD_RANDOM      = 0x40
     CMD_FB_EXT      = 0x41
@@ -125,7 +134,7 @@ class RNodeInterface(Interface):
         if RNS.vendor.platformutils.is_android():
             raise SystemError("Invalid interface type. The Android-specific RNode interface must be used on Android")
 
-        import importlib
+        import importlib.util
         if importlib.util.find_spec('serial') != None:
             import serial
         else:
@@ -184,6 +193,7 @@ class RNodeInterface(Interface):
         self.online      = False
         self.detached    = False
         self.reconnecting= False
+        self.hw_errors   = []
 
         self.use_ble     = False
         self.ble_name    = ble_name
@@ -233,10 +243,18 @@ class RNodeInterface(Interface):
         self.r_airtime_long       = 0.0
         self.r_channel_load_short = 0.0
         self.r_channel_load_long  = 0.0
-        self.r_symbol_time_ms = None
-        self.r_symbol_rate = None
-        self.r_preamble_symbols = None
-        self.r_premable_time_ms = None
+        self.r_symbol_time_ms     = None
+        self.r_symbol_rate        = None
+        self.r_preamble_symbols   = None
+        self.r_premable_time_ms   = None
+        self.r_csma_slot_time_ms  = None
+        self.r_csma_difs_ms       = None
+        self.r_csma_cw_band       = None
+        self.r_csma_cw_min        = None
+        self.r_csma_cw_max        = None
+        self.r_current_rssi       = None
+        self.r_noise_floor        = None
+
         self.r_battery_state = RNodeInterface.BATTERY_STATE_UNKNOWN
         self.r_battery_percent = 0
         self.r_framebuffer = b""
@@ -246,7 +264,7 @@ class RNodeInterface(Interface):
         self.r_disp_readtime = 0
         self.r_disp_latency = 0
 
-        self.should_read_display = False
+        self.should_read_display   = False
         self.read_display_interval = RNodeInterface.DISPLAY_READ_INTERVAL
 
         self.packet_queue    = []
@@ -870,16 +888,31 @@ class RNodeInterface(Interface):
                                         byte = KISS.FESC
                                     escape = False
                                 command_buffer = command_buffer+bytes([byte])
-                                if (len(command_buffer) == 8):
+                                if (len(command_buffer) == 11):
                                     ats = command_buffer[0] << 8 | command_buffer[1]
                                     atl = command_buffer[2] << 8 | command_buffer[3]
                                     cus = command_buffer[4] << 8 | command_buffer[5]
                                     cul = command_buffer[6] << 8 | command_buffer[7]
+                                    crs = command_buffer[8]
+                                    nfl = command_buffer[9]
+                                    ntf = command_buffer[10]
                                     
                                     self.r_airtime_short      = ats/100.0
                                     self.r_airtime_long       = atl/100.0
                                     self.r_channel_load_short = cus/100.0
                                     self.r_channel_load_long  = cul/100.0
+                                    self.r_current_rssi       = crs-RNodeInterface.RSSI_OFFSET
+                                    self.r_noise_floor        = nfl-RNodeInterface.RSSI_OFFSET
+                                    if ntf == 0xFF:
+                                        self.r_interference   = None
+                                    else:
+                                        self.r_interference   = ntf-RNodeInterface.RSSI_OFFSET
+                                    
+                                    if self.r_interference != None:
+                                        RNS.log(f"{self} Radio detected interference at {self.r_interference} dBm", RNS.LOG_DEBUG)
+
+                                    # TODO: Remove debug
+                                    # RNS.log(f"RSSI: {self.r_current_rssi}, Noise floor: {self.r_noise_floor}, Interference: {self.r_interference}", RNS.LOG_EXTREME)
                         elif (command == KISS.CMD_STAT_PHYPRM):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -891,22 +924,49 @@ class RNodeInterface(Interface):
                                         byte = KISS.FESC
                                     escape = False
                                 command_buffer = command_buffer+bytes([byte])
-                                if (len(command_buffer) == 10):
+                                if (len(command_buffer) == 12):
                                     lst = (command_buffer[0] << 8 | command_buffer[1])/1000.0
                                     lsr = command_buffer[2] << 8 | command_buffer[3]
                                     prs = command_buffer[4] << 8 | command_buffer[5]
                                     prt = command_buffer[6] << 8 | command_buffer[7]
                                     cst = command_buffer[8] << 8 | command_buffer[9]
+                                    dft = command_buffer[10] << 8 | command_buffer[11]
 
-                                    if lst != self.r_symbol_time_ms or lsr != self.r_symbol_rate or prs != self.r_preamble_symbols or prt != self.r_premable_time_ms or cst != self.r_csma_slot_time_ms:
+                                    if lst != self.r_symbol_time_ms or lsr != self.r_symbol_rate or prs != self.r_preamble_symbols or prt != self.r_premable_time_ms or cst != self.r_csma_slot_time_ms or dft != self.r_csma_difs_ms:
                                         self.r_symbol_time_ms    = lst
                                         self.r_symbol_rate       = lsr
                                         self.r_preamble_symbols  = prs
                                         self.r_premable_time_ms  = prt
                                         self.r_csma_slot_time_ms = cst
-                                        RNS.log(str(self)+" Radio reporting symbol time is "+str(round(self.r_symbol_time_ms,2))+"ms (at "+str(self.r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
-                                        RNS.log(str(self)+" Radio reporting preamble is "+str(self.r_preamble_symbols)+" symbols ("+str(self.r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
-                                        RNS.log(str(self)+" Radio reporting CSMA slot time is "+str(self.r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
+                                        self.r_csma_difs_ms      = dft
+                                        RNS.log(f"{self} Radio reporting symbol time is "+str(round(self.r_symbol_time_ms,2))+"ms ("+str(self.r_symbol_rate)+" baud)", RNS.LOG_DEBUG)
+                                        RNS.log(f"{self} Radio reporting preamble is "+str(self.r_preamble_symbols)+" symbols ("+str(self.r_premable_time_ms)+"ms)", RNS.LOG_DEBUG)
+                                        RNS.log(f"{self} Radio reporting CSMA slot time is "+str(self.r_csma_slot_time_ms)+"ms", RNS.LOG_DEBUG)
+                                        RNS.log(f"{self} Radio reporting DIFS time is "+str(self.r_csma_difs_ms)+"ms", RNS.LOG_DEBUG)
+                        elif (command == KISS.CMD_STAT_CSMA):
+                            if (byte == KISS.FESC):
+                                escape = True
+                            else:
+                                if (escape):
+                                    if (byte == KISS.TFEND):
+                                        byte = KISS.FEND
+                                    if (byte == KISS.TFESC):
+                                        byte = KISS.FESC
+                                    escape = False
+                                command_buffer = command_buffer+bytes([byte])
+                                if (len(command_buffer) == 3):
+                                    cbw = command_buffer[0]
+                                    cbl = command_buffer[1]
+                                    cbh = command_buffer[2]
+
+                                    if cbw != self.r_csma_cw_band or cbl != self.r_csma_cw_min or cbh != self.r_csma_cw_max:
+                                        self.r_csma_cw_band = cbw
+                                        self.r_csma_cw_min  = cbl
+                                        self.r_csma_cw_max  = cbh
+                                        # TODO: Remove debug
+                                        # RNS.log(f"{self} Radio reporting contention window band is {self.r_csma_cw_band}", RNS.LOG_EXTREME)
+                                        # RNS.log(f"{self} Radio reporting minimum contention window is {self.r_csma_cw_min}", RNS.LOG_EXTREME)
+                                        # RNS.log(f"{self} Radio reporting maximum contention window is {self.r_csma_cw_max}", RNS.LOG_EXTREME)
                         elif (command == KISS.CMD_STAT_BAT):
                             if (byte == KISS.FESC):
                                 escape = True
@@ -1139,7 +1199,7 @@ class BLEConnection():
         self.connect_job_running = False
         self.device_disappeared = False
 
-        import importlib
+        import importlib.util
         if BLEConnection.bleak == None:
             if importlib.util.find_spec("bleak") != None:
                 import bleak

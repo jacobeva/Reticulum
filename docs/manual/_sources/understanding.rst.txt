@@ -453,7 +453,7 @@ For exchanges of small amounts of information, Reticulum offers the *Packet* API
     public signing key.
 
 * | In case the packet is addressed to a *group* destination type, the packet will be encrypted with the
-    pre-shared AES-128 key associated with the destination. In case the packet is addressed to a *plain*
+    pre-shared AES-256 key associated with the destination. In case the packet is addressed to a *plain*
     destination type, the payload data will not be encrypted. Neither of these two destination types can offer
     forward secrecy. In general, it is recommended to always use the *single* destination type, unless it is
     strictly necessary to use one of the others.
@@ -858,9 +858,17 @@ of the different interface modes, and how they are configured.
 Cryptographic Primitives
 ------------------------
 
-Reticulum has been designed to use a simple suite of efficient, strong and modern
-cryptographic primitives, with widely available implementations that can be used
-both on general-purpose CPUs and on microcontrollers. The necessary primitives are:
+Reticulum uses a simple suite of efficient, strong and well-tested cryptographic
+primitives, with widely available implementations that can be used both on
+general-purpose CPUs and on microcontrollers.
+
+One of the primary considerations for choosing this particular set of primitives is
+that they can be implemented *safely* with relatively few pitfalls, on practically
+all current computing platforms.
+
+The primitives listed here **are authoritative**. Anything claiming to be Reticulum,
+but not using these exact primitives **is not** Reticulum, and possibly an
+intentionally compromised or weakened clone. The utilised primitives are:
 
 * Ed25519 for signatures
 
@@ -872,11 +880,11 @@ both on general-purpose CPUs and on microcontrollers. The necessary primitives a
 
   * Ephemeral keys derived from an ECDH key exchange on Curve25519
 
-  * AES-128 in CBC mode with PKCS7 padding
+  * AES-256 in CBC mode with PKCS7 padding
 
   * HMAC using SHA256 for message authentication
 
-  * IVs are generated through os.urandom()
+  * IVs must be generated through ``os.urandom()`` or better
 
   * No Fernet version and timestamp metadata fields
 
@@ -884,7 +892,7 @@ both on general-purpose CPUs and on microcontrollers. The necessary primitives a
 
 * SHA-512
 
-In the default installation configuration, the ``X25519``, ``Ed25519`` and ``AES-128-CBC``
+In the default installation configuration, the ``X25519``, ``Ed25519`` and ``AES-256-CBC``
 primitives are provided by `OpenSSL <https://www.openssl.org/>`_ (via the `PyCA/cryptography <https://github.com/pyca/cryptography>`_
 package). The hashing functions ``SHA-256`` and ``SHA-512`` are provided by the standard
 Python `hashlib <https://docs.python.org/3/library/hashlib.html>`_. The ``HKDF``, ``HMAC``,

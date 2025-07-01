@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2024 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -29,6 +37,9 @@ import time
 import sys
 import os
 import RNS
+
+class TCPInterface():
+    HW_MTU            = 262144
 
 class HDLC():
     FLAG              = 0x7E
@@ -64,6 +75,7 @@ class ThreadingTCP6Server(socketserver.ThreadingMixIn, socketserver.TCPServer):
 class TCPClientInterface(Interface):
     BITRATE_GUESS = 10*1000*1000
     DEFAULT_IFAC_SIZE = 16
+    AUTOCONFIGURE_MTU = True
 
     RECONNECT_WAIT = 5
     RECONNECT_MAX_TRIES = None
@@ -96,8 +108,7 @@ class TCPClientInterface(Interface):
         connect_timeout = c.as_int("connect_timeout") if "connect_timeout" in c else None
         max_reconnect_tries = c.as_int("max_reconnect_tries") if "max_reconnect_tries" in c else None
         
-        self.HW_MTU = 1064
-        
+        self.HW_MTU           = TCPInterface.HW_MTU
         self.IN               = True
         self.OUT              = False
         self.socket           = None
@@ -192,19 +203,21 @@ class TCPClientInterface(Interface):
             self.socket.setsockopt(socket.IPPROTO_TCP, TCP_KEEPIDLE, int(TCPClientInterface.I2P_PROBE_AFTER))
         
     def detach(self):
+        self.online = False
         if self.socket != None:
             if hasattr(self.socket, "close"):
                 if callable(self.socket.close):
-                    RNS.log("Detaching "+str(self), RNS.LOG_DEBUG)
                     self.detached = True
                     
                     try:
-                        self.socket.shutdown(socket.SHUT_RDWR)
+                        if self.socket != None:
+                            self.socket.shutdown(socket.SHUT_RDWR)
                     except Exception as e:
                         RNS.log("Error while shutting down socket for "+str(self)+": "+str(e))
 
                     try:
-                        self.socket.close()
+                        if self.socket != None:
+                            self.socket.close()
                     except Exception as e:
                         RNS.log("Error while closing socket for "+str(self)+": "+str(e))
 
@@ -285,14 +298,15 @@ class TCPClientInterface(Interface):
             raise IOError("Attempt to reconnect on a non-initiator TCP interface")
 
     def process_incoming(self, data):
-        self.rxb += len(data)
-        if hasattr(self, "parent_interface") and self.parent_interface != None:
-            self.parent_interface.rxb += len(data)
-                    
-        self.owner.inbound(data, self)
+        if self.online and not self.detached:
+            self.rxb += len(data)
+            if hasattr(self, "parent_interface") and self.parent_interface != None:
+                self.parent_interface.rxb += len(data)
+                        
+            self.owner.inbound(data, self)
 
     def process_outgoing(self, data):
-        if self.online:
+        if self.online and not self.detached:
             # while self.writing:
             #     time.sleep(0.01)
 
@@ -320,19 +334,20 @@ class TCPClientInterface(Interface):
         try:
             in_frame = False
             escape = False
+            frame_buffer = b""
+            data_in = b""
             data_buffer = b""
-            command = KISS.CMD_UNKNOWN
 
             while True:
-                data_in = self.socket.recv(4096)
+                if self.socket: data_in = self.socket.recv(4096)
+                else: data_in = b""
                 if len(data_in) > 0:
-                    pointer = 0
-                    while pointer < len(data_in):
-                        byte = data_in[pointer]
-                        pointer += 1
-
-                        if self.kiss_framing:
-                            # Read loop for KISS framing
+                    if self.kiss_framing:
+                        # Read loop for KISS framing
+                        pointer = 0
+                        while pointer < len(data_in):
+                            byte = data_in[pointer]
+                            pointer += 1
                             if (in_frame and byte == KISS.FEND and command == KISS.CMD_DATA):
                                 in_frame = False
                                 self.process_incoming(data_buffer)
@@ -358,25 +373,26 @@ class TCPClientInterface(Interface):
                                             escape = False
                                         data_buffer = data_buffer+bytes([byte])
 
-                        else:
-                            # Read loop for HDLC framing
-                            if (in_frame and byte == HDLC.FLAG):
-                                in_frame = False
-                                self.process_incoming(data_buffer)
-                            elif (byte == HDLC.FLAG):
-                                in_frame = True
-                                data_buffer = b""
-                            elif (in_frame and len(data_buffer) < self.HW_MTU):
-                                if (byte == HDLC.ESC):
-                                    escape = True
+                    else:
+                        # Read loop for standard HDLC framing
+                        frame_buffer += data_in
+                        flags_remaining = True
+                        while flags_remaining:
+                            frame_start = frame_buffer.find(HDLC.FLAG)
+                            if frame_start != -1:
+                                frame_end = frame_buffer.find(HDLC.FLAG, frame_start+1)
+                                if frame_end != -1:
+                                    frame = frame_buffer[frame_start+1:frame_end]
+                                    frame = frame.replace(bytes([HDLC.ESC, HDLC.FLAG ^ HDLC.ESC_MASK]), bytes([HDLC.FLAG]))
+                                    frame = frame.replace(bytes([HDLC.ESC, HDLC.ESC  ^ HDLC.ESC_MASK]), bytes([HDLC.ESC]))
+                                    if len(frame) > RNS.Reticulum.HEADER_MINSIZE:
+                                        self.process_incoming(frame)
+                                    frame_buffer = frame_buffer[frame_end:]
                                 else:
-                                    if (escape):
-                                        if (byte == HDLC.FLAG ^ HDLC.ESC_MASK):
-                                            byte = HDLC.FLAG
-                                        if (byte == HDLC.ESC  ^ HDLC.ESC_MASK):
-                                            byte = HDLC.ESC
-                                        escape = False
-                                    data_buffer = data_buffer+bytes([byte])
+                                    flags_remaining = False
+                            else:
+                                flags_remaining = False
+
                 else:
                     self.online = False
                     if self.initiator and not self.detached:
@@ -431,12 +447,13 @@ class TCPClientInterface(Interface):
 
 
 class TCPServerInterface(Interface):
-    BITRATE_GUESS      = 10*1000*1000
+    BITRATE_GUESS     = 10_000_000
     DEFAULT_IFAC_SIZE = 16
+    AUTOCONFIGURE_MTU = True
 
     @staticmethod
     def get_address_for_if(name, bind_port, prefer_ipv6=False):
-        import RNS.vendor.ifaddr.niwrapper as netinfo
+        from RNS.Interfaces import netinfo
         ifaddr = netinfo.ifaddresses(name)
         if len(ifaddr) < 1:
             raise SystemError(f"No addresses available on specified kernel interface \"{name}\" for TCPServerInterface to bind to")
@@ -445,9 +462,9 @@ class TCPServerInterface(Interface):
             bind_ip = ifaddr[netinfo.AF_INET6][0]["addr"]
             if bind_ip.lower().startswith("fe80::"):
                 # We'll need to add the interface as scope for link-local addresses
-                return TCPServerInterface.get_address_for_host(f"{bind_ip}%{name}", bind_port)
+                return TCPServerInterface.get_address_for_host(f"{bind_ip}%{name}", bind_port, prefer_ipv6)
             else:
-                return TCPServerInterface.get_address_for_host(bind_ip, bind_port)
+                return TCPServerInterface.get_address_for_host(bind_ip, bind_port, prefer_ipv6)
         elif netinfo.AF_INET in ifaddr:
             bind_ip = ifaddr[netinfo.AF_INET][0]["addr"]
             return (bind_ip, bind_port)
@@ -455,8 +472,15 @@ class TCPServerInterface(Interface):
             raise SystemError(f"No addresses available on specified kernel interface \"{name}\" for TCPServerInterface to bind to")
 
     @staticmethod
-    def get_address_for_host(name, bind_port):
-        address_info = socket.getaddrinfo(name, bind_port, proto=socket.IPPROTO_TCP)[0]
+    def get_address_for_host(name, bind_port, prefer_ipv6=False):
+        address_infos = socket.getaddrinfo(name, bind_port, proto=socket.IPPROTO_TCP)
+        address_info  = address_infos[0]
+        for entry in address_infos:
+            if prefer_ipv6 and entry[0] == socket.AF_INET6:
+                address_info = entry; break
+            elif not prefer_ipv6 and entry[0] == socket.AF_INET:
+                address_info = entry; break
+
         if address_info[0] == socket.AF_INET6:
             return (name, bind_port, address_info[4][2], address_info[4][3])
         elif address_info[0] == socket.AF_INET:
@@ -484,7 +508,7 @@ class TCPServerInterface(Interface):
         if port != None:
             bindport = port
 
-        self.HW_MTU = 1064
+        self.HW_MTU = TCPInterface.HW_MTU
 
         self.online = False
         self.spawned_interfaces = []
@@ -508,7 +532,7 @@ class TCPServerInterface(Interface):
         else:
             if bindip == None:
                 raise SystemError(f"No TCP bind IP configured for interface \"{name}\"")
-            bind_address = TCPServerInterface.get_address_for_host(bindip, self.bind_port)
+            bind_address = TCPServerInterface.get_address_for_host(bindip, self.bind_port, prefer_ipv6)
 
         if bind_address != None:
             self.receives = True
@@ -531,6 +555,7 @@ class TCPServerInterface(Interface):
             else:
                 ThreadingTCPServer.allow_reuse_address = True
                 self.server = ThreadingTCPServer(bind_address, handlerFactory(self.incoming_connection))
+                self.server.daemon_threads = True
 
             self.bitrate = TCPServerInterface.BITRATE_GUESS
 
@@ -553,6 +578,7 @@ class TCPServerInterface(Interface):
         spawned_interface.target_port = str(handler.client_address[1])
         spawned_interface.parent_interface = self
         spawned_interface.bitrate = self.bitrate
+        spawned_interface.optimise_mtu()
         
         spawned_interface.ifac_size = self.ifac_size
         spawned_interface.ifac_netname = self.ifac_netname
@@ -596,15 +622,16 @@ class TCPServerInterface(Interface):
     def process_outgoing(self, data):
         pass
 
-
     def detach(self):
+        self.detached = True
+        self.online = False
         if self.server != None:
             if hasattr(self.server, "shutdown"):
                 if callable(self.server.shutdown):
                     try:
                         RNS.log("Detaching "+str(self), RNS.LOG_DEBUG)
                         self.server.shutdown()
-                        self.detached = True
+                        self.server.server_close()
                         self.server = None
 
                     except Exception as e:

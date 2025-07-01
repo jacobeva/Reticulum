@@ -1,3 +1,194 @@
+### 2025-05-15: RNS β 0.9.6
+
+This release activates AES-256 as the default encryption mode for all communication. It is the last release that will support the old AES-128 based modes, which will be entirely phased out in the next release.
+
+This release also includes a number of API and resource consumption improvements, and fixes a bug.
+
+**Changes**
+- Enabled AES-256 as default encryption mode for all traffic
+- Added dynamic link keepalive and timeout calculation
+- Added ability to efficiently transfer files as responses in the `Request` API
+- Added ability to include metadata on `Resource` transfers
+- Added option to specify `Resource` auto-compression limits
+- Added option to specify `Request` response auto-compression limits
+- Added `Resource` transfer example
+- Added allow overwrite option to `rncp`
+- Improved hardware MTU auto-configuration
+- Improved handling of file transfers using the `Resource` API
+- Improved `Resource` transfer memory consumption
+- Improved memory consumption of applications connected to a shared instance
+- Improved `rncp` memory consumption for large files
+- Fixed announce handlers not triggering after shared instance disappearance
+
+**Release Hashes**
+```
+a23c64a04c1e83fd0ab449f564ac904da7fd4f61c0faf68a063f486cc48b44bd rns-0.9.6-py3-none-any.whl
+4544882dea902b18b00d8a04c9ab93201974573b7b63c3db06cb310b0acec240 rnspure-0.9.6-py3-none-any.whl
+```
+
+### 2025-05-09: RNS β 0.9.5
+
+This release initiates migration of Reticulum from AES-128 to AES-256 as the default link and packet cipher mode. It is a compatibility/migration release, that while supporting AES-256 doesn't use it by default. It will work with both the old AES-128 based modes, and the new AES-256 based modes. There's a very slight penalty in performance to support both the old and new modes at the same time, but only for single packet APIs (not links), and it really shouldn't be noticeable in any everyday use.
+
+In the next release, version `0.9.6`, Reticulum will transition fully to AES-256 and use it by default for all communications. That means that both single packets and links will use AES-256 by default. The old AES-128 link mode may or may not be available for a few releases, but will ultimately be phased out entirely.
+
+The update requires no intervention, configuration changes or anything similar from a users or developers perspective. Everything should simply work. This goes both for the `0.9.5` update, and the next `0.9.6` update that transitions fully to AES-256.
+
+**Changes**
+- Added support for AES-256 mode to links and packets
+- Added dynamic link mode support
+- Added temporary backwards compatibility for AES-128 link and packet modes
+- Added `get_mode()` method to link API
+- Added tests for all enabled link modes
+- Added `instance_name` option and description to default config file
+- Improved ratchet persist reliability if Reticulum is force killed while persisting ratchets
+- Fixed interface string representation for some interfaces
+- Fixed instance name config option being overwritten if option was not last in section
+- Fixed unhandled potential exception on fast-flapping `BackboneInterface` connections
+
+**Release Hashes**
+```
+ae6587c86c98cae0df73567af093cc92fe204e71bb01f2506da9aec626a27e97 rns-0.9.5-py3-none-any.whl
+96208c1d1234e3e4b1c18ca986bad5d4693aeb431453efd7ade33b87f35600e1 rnspure-0.9.5-py3-none-any.whl
+```
+
+### 2025-04-15: RNS β 0.9.4
+
+This release significantly improves memory utilisation and performance. It also includes a few new features and general improvements to the included utilities and programs.
+
+**Changes**
+- Significantly improved memory utilisation, thread count and performance on nodes with many interfaces or clients
+- Switched local instance communication to run over abstract domain sockets on Linux and Android
+- Switched instance IPC to run over abstract domain sockets on Linux and Android
+- Added kernel event based I/O backend on Linux and Android
+- Added fast `BackboneInterface` type
+- Added support for XIAO-ESP32S3 to `rnodeconf`
+- Added interactive shell option to `rnsd`
+- Added API option to search for identity by identity hash
+- Added option to run TCP and Backbone interfaces in AP mode
+- Improved `RNodeMultiInterface` host communications specification
+- Improved `rncp` statistics output
+- Improved link and reverse-table culling
+- Fixed an occasional I/O thread hang on instance shutdown, that would result in an error printed to the console
+- Fixed various minor interface logging inconsistencies
+- Fixed various minor interface checking inconsistencies
+- Updated internal `configobj` implementation
+- Refactored various parts of the transport core code
+- Swicthed to using internal `netinfo` implementation instead of including full `ifaddr` library
+- Cleaned out unneeded dependencies
+
+**Release Hashes**
+```
+737294f29e013f9fa9c8c1326006d0547497607156828fee3dc2a0d3ddd754e7  rns-0.9.4-py3-none-any.whl
+0bd8a908af115c27733484853d779574d6383ebc1d78160e5a72c14ed9692a13  rnspure-0.9.4-py3-none-any.whl
+```
+
+### 2025-03-13: RNS β 0.9.3
+
+This maintenance release improves performance and fixes a number of bugs.
+
+**Changes**
+- Enabled link MTU discovery by default
+- Added on-demand object code compilation and loader shim
+- Added link API methods
+- Added child interface spawning for AutoInterface
+- Fixed corrupt ratchet files not being removed on maintenance cleaning
+- Fixed `rnid` not waiting for announce timebase tick before announcing
+
+**Release Hashes**
+```
+0270c988a2b898b28348cd78138667115d4ef3f7e09c86531baaefbee35ef851 rns-0.9.3-py3-none-any.whl
+eee1a6c4c9c0f04bb17b12b8fb37b9c4cec12a99c87a046730eb7c9a6ffd999f rnspure-0.9.3-py3-none-any.whl
+```
+
+### 2025-01-19: RNS β 0.9.2
+
+This maintenance release fixes a number of bugs.
+
+**Changes**
+- Fixed missing RX/TX bytes statistics assignment
+- Fixed potential daemon thread IO buffer deadlock on externally mediated shutdown signal
+- Fixed missing check for path announce emission timestamp in lower hop-count announce processing
+
+**Release Hashes**
+```
+068eb4408b332ea6eec1a58fb4644fba3531c9ca10dcd79ecf893aaaf40e720d rns-0.9.2-py3-none-any.whl
+1e7c123d244cc14c287568f3a99953cc11ffc1e79a72a029aa1be72fa8eff24e rnspure-0.9.2-py3-none-any.whl
+```
+
+### 2025-01-19: RNS β 0.9.1
+
+This maintenance release adds reject signalling mechanism to resource transfers, fixes inconsistencies in the code examples, and improves thread configuration in the transport core.
+
+**Changes**
+- Added resource reject signalling
+- Added error reporting on configured radio parameter mismatch on Android
+- Improved thread configuration for transport core threads
+- Updated examples
+
+**Release Hashes**
+```
+49288a562ad6d4b5647c3afec051a6bb6497b75e3f165a972436134d4a93ad76 rns-0.9.1-py3-none-any.whl
+abd6c4bdead2fc25d0b9b2cda5708586e8cb776b088f2a901a5f262e2ed901ae rnspure-0.9.1-py3-none-any.whl
+```
+
+### 2025-01-17: RNS β 0.9.0
+
+This release lays the groundwork for future performance and resource utilisation optimisations. Most importantly, this release adds **link MTU autodiscovery**, which allow established links to use much higher MTUs than the base MTU of 500 bytes.
+
+**Please note!** To actually use link MTU discovery, all transport nodes along the path must be upgraded to at least version `0.9.0`. Since this is the first release to add support for this feature, *it is currently **not** activated by default*, and no clients or applications will use it yet. Using link MTU autodiscovery by default will be enabled by default in RNS version `0.9.1`. Please upgrade your nodes!
+
+Additionally, this release adds several new features, performance improvements and bug fixes, as well as support for RNodes running firmware version `1.81`.
+
+**Changes**
+- Added MTU autoconfiguration on interfaces that support higher MTUs
+- Added link MTU autodiscovery and path clamping
+- Added dynamic SDU calculations based on link MTU to `Resource`, `Channel` and `Buffer`
+- Added resource EIFR continuity to split resource handling
+- Added interference status to `RNodeInterface`
+- Fixed a display bug in `rnstatus`
+- Added live traffic stats to `rnstatus`
+- Added T3S3 support to `rnodeconf`
+- Added Heltec T114 support to `rnodeconf`
+- Added LilyGO T-Echo support to `rnodeconf`
+- Added option to print device configuration to `rnodeconf`
+- Improved CPU utilisation and memory consumption
+- Improved `rnsd` restart time on systems with many interfaces
+- Improved `rncp` status output
+- Improved packet filter performance
+- Improved interface detachment handling
+- Improved resource transfer timing and performance
+- Improved Transport core efficiency
+- Improved reliability of ratchet reloads if I/O conflicts occur
+- Improved logging
+- Improved built-in profiler
+- Fixed a potential deadlock in logging
+- Fixed time formatters not handling negative times
+- Updated example code
+
+**Release Hashes**
+```
+1ee60634cf0627c45b93f4e6c9adaf1fcdf9c1a8dfd4dd3dcd499e029554ab4f rns-0.9.0-py3-none-any.whl
+b67eec583fdb224ba8174b317e66b8f7344e338e93760ed1a90f0bafea8cf09e rnspure-0.9.0-py3-none-any.whl
+```
+
+### 2025-01-09: RNS β 0.8.9
+
+This maintenance release adds a number of configuration options to `rnodeconf`.
+
+**Changes**
+- Added noise floor output to `rnstatus` for supported interfaces
+- Added channel noise floor and CSMA parameter reporting to `RNodeInterface`
+- Added ability to set display rotation in `rnodeconf`
+- Added ability to configure interference avoidance to `rnodeconf`
+- Fixed missing console image install on Heltec V3 in `rnodeconf`
+
+**Release Hashes**
+```
+b54fe8bc296f83a3a70569c9d1e9db3096249789c18f8d0217671479fa6881a1 rns-0.8.9-py3-none-any.whl
+52fd992e5f9478d5a1f61f8f37dc0ee2d268fdd0b8a4e6656d33d632490afc5a rnspure-0.8.9-py3-none-any.whl
+```
+
 ### 2024-12-11: RNS β 0.8.8
 
 This maintenance release adds a single API function and fixes a bug.

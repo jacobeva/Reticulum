@@ -1,4 +1,4 @@
-Reticulum Network Stack β <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=total&units=international_system&left_color=grey&right_color=blue&left_text=Installs" style="padding-left:10px"/><a href="https://github.com/markqvist/Reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/markqvist/Reticulum/actions/workflows/build.yml/badge.svg"/></a>
+Reticulum Network Stack β <img align="right" src="https://static.pepy.tech/personalized-badge/rns?period=month&units=international_system&left_color=grey&right_color=blue&left_text=Installs/month" style="padding-left:10px"/><a href="https://github.com/markqvist/Reticulum/actions/workflows/build.yml"><img align="right" src="https://github.com/markqvist/Reticulum/actions/workflows/build.yml/badge.svg"/></a>
 ==========
 
 <p align="center"><img width="200" src="https://raw.githubusercontent.com/markqvist/Reticulum/master/docs/source/graphics/rns_logo_512.png"></p>
@@ -52,7 +52,7 @@ For more info, see [reticulum.network](https://reticulum.network/) and [the FAQ 
 - Forward Secrecy is available for all communication types, both for single packets and over links
 - Reticulum uses the following format for encrypted tokens:
   - Ephemeral per-packet and link keys and derived from an ECDH key exchange on Curve25519
-  - AES-128 in CBC mode with PKCS7 padding
+  - AES-256 in CBC mode with PKCS7 padding
   - HMAC using SHA256 for authentication
   - IVs are generated through os.urandom()
 - Unforgeable packet delivery confirmations
@@ -62,7 +62,7 @@ For more info, see [reticulum.network](https://reticulum.network/) and [the FAQ 
   - Easily create your own custom interfaces for communicating over anything
 - Authentication and virtual network segmentation on all supported interface types
 - An intuitive and easy-to-use API
-  - Simpler and easier to use than sockets APIs and simpler, but more powerful
+  - Simpler and easier to use than sockets APIs, but more powerful
   - Makes building distributed and decentralised applications much simpler
 - Reliable and efficient transfer of arbitrary amounts of data
   - Reticulum can handle a few bytes of data or files of many gigabytes
@@ -86,9 +86,10 @@ following resources.
 
 - You can use the [rnsh](https://github.com/acehoss/rnsh) program to establish remote shell sessions over Reticulum.
 - [LXMF](https://github.com/markqvist/lxmf) is a distributed, delay and disruption tolerant message transfer protocol built on Reticulum
+- The [LXST](https://github.com/markqvist/lxst) protocol and framework provides real-time audio and signals transport over Reticulum. It includes primitives and utilities for building voice-based applications and hardware devices, such as the `rnphone` program, that can be used to build hardware telephones.
 - For an off-grid, encrypted and resilient mesh communications platform, see [Nomad Network](https://github.com/markqvist/NomadNet)
-- The Android, Linux, macOS and Windows app [Sideband](https://github.com/markqvist/Sideband) has a graphical interface and focuses on ease of use.
-- [MeshChat](https://github.com/liamcottle/reticulum-meshchat) is a user-friendly LXMF client, that also supports voice calls.
+- The Android, Linux, macOS and Windows app [Sideband](https://github.com/markqvist/Sideband) has a graphical interface and many advanced features, such as file transfers, image and voice messages, real-time voice calls, a distributed telemetry system, mapping capabilities and full plugin extensibility.
+- [MeshChat](https://github.com/liamcottle/reticulum-meshchat) is a user-friendly LXMF client with a web-based interface, that also supports image and voice messages, as well as file transfers. It also includes a built-in page browser for browsing Nomad Network nodes.
 
 ## Where can Reticulum be used?
 Over practically any medium that can support at least a half-duplex channel
@@ -296,23 +297,30 @@ You can help support the continued development of open, free and private communi
   ```
   84FpY1QbxHcgdseePYNmhTHcrgMX4nFfBYtz2GKYToqHVVhJp8Eaw1Z1EedRnKD19b3B8NiLCGVxzKV17UMmmeEsCrPyA5w
   ```
-- Ethereum
-  ```
-  0xFDabC71AC4c0C78C95aDDDe3B4FA19d6273c5E73
-  ```
 - Bitcoin
   ```
-  35G9uWVzrpJJibzUwpNUQGQNFzLirhrYAH
+  bc1p4a6axuvl7n9hpapfj8sv5reqj8kz6uxa67d5en70vzrttj0fmcusgxsfk5
   ```
-- Ko-Fi: https://ko-fi.com/markqvist
+- Ethereum
+  ```
+  0xae89F3B94fC4AD6563F0864a55F9a697a90261ff
+  ```
+- Liberapay: https://liberapay.com/Reticulum/
 
-Are certain features in the development roadmap are important to you or your
-organisation? Make them a reality quickly by sponsoring their implementation.
+- Ko-Fi: https://ko-fi.com/markqvist
 
 ## Cryptographic Primitives
 Reticulum uses a simple suite of efficient, strong and well-tested cryptographic
 primitives, with widely available implementations that can be used both on
-general-purpose CPUs and on microcontrollers. The utilised primitives are:
+general-purpose CPUs and on microcontrollers.
+
+One of the primary considerations for choosing this particular set of primitives is
+that they can be implemented *safely* with relatively few pitfalls, on practically
+all current computing platforms.
+
+The primitives listed here **are authoritative**. Anything claiming to be Reticulum,
+but not using these exact primitives **is not** Reticulum, and possibly an
+intentionally compromised or weakened clone. The utilised primitives are:
 
 - Reticulum Identity Keys are 512-bit Curve25519 keysets
   - A 256-bit Ed25519 key for signatures
@@ -320,15 +328,15 @@ general-purpose CPUs and on microcontrollers. The utilised primitives are:
 - HKDF for key derivation
 - Encrypted tokens are based on the [Fernet spec](https://github.com/fernet/spec/)
   - Ephemeral keys derived from an ECDH key exchange on Curve25519
-  - AES-128 in CBC mode with PKCS7 padding
   - HMAC using SHA256 for message authentication
-  - IVs are generated through os.urandom()
+  - IVs must be generated through `os.urandom()` or better
+  - AES-256 in CBC mode with PKCS7 padding
   - No Fernet version and timestamp metadata fields
 - SHA-256
 - SHA-512
 
-In the default installation configuration, the `X25519`, `Ed25519` and
-`AES-128-CBC` primitives are provided by [OpenSSL](https://www.openssl.org/)
+In the default installation configuration, the `X25519`, `Ed25519`,
+and `AES-256-CBC` primitives are provided by [OpenSSL](https://www.openssl.org/)
 (via the [PyCA/cryptography](https://github.com/pyca/cryptography) package).
 The hashing functions `SHA-256` and `SHA-512` are provided by the standard
 Python [hashlib](https://docs.python.org/3/library/hashlib.html). The `HKDF`,
@@ -342,12 +350,18 @@ provided by the following internal implementations:
 
 
 Reticulum also includes a complete implementation of all necessary primitives
-in pure Python. If OpenSSL & PyCA are not available on the system when
+in pure Python. If OpenSSL and PyCA are not available on the system when
 Reticulum is started, Reticulum will instead use the internal pure-python
 primitives. A trivial consequence of this is performance, with the OpenSSL
 backend being *much* faster. The most important consequence however, is the
 potential loss of security by using primitives that has not seen the same
 amount of scrutiny, testing and review as those from OpenSSL.
+
+Please note that by default, installing Reticulum will **require** OpenSSL and
+PyCA to also be automatically installed if not already available. It is only
+possible to use the pure-python primitives if this requirement is specifically
+overridden by the user, for example by installing the `rnspure` package instead
+of the normal `rns` package, or by running directly from local source-code.
 
 If you want to use the internal pure-python primitives, it is **highly
 advisable** that you have a good understanding of the risks that this pose, and
@@ -372,12 +386,12 @@ projects:
 - [PyCA/cryptography](https://github.com/pyca/cryptography), *BSD License*
 - [Pure-25519](https://github.com/warner/python-pure25519) by [Brian Warner](https://github.com/warner), *MIT License*
 - [Pysha2](https://github.com/thomdixon/pysha2) by [Thom Dixon](https://github.com/thomdixon), *MIT License*
-- [Python-AES](https://github.com/orgurar/python-aes) by [Or Gur Arie](https://github.com/orgurar), *MIT License*
+- [Python AES-128](https://github.com/orgurar/python-aes) by [Or Gur Arie](https://github.com/orgurar), *MIT License*
+- [Python AES-256](https://github.com/boppreh/aes) by [BoppreH](https://github.com/boppreh), *MIT License*
 - [Curve25519.py](https://gist.github.com/nickovs/cc3c22d15f239a2640c185035c06f8a3#file-curve25519-py) by [Nicko van Someren](https://gist.github.com/nickovs), *Public Domain*
 - [I2Plib](https://github.com/l-n-s/i2plib) by [Viktor Villainov](https://github.com/l-n-s)
 - [PySerial](https://github.com/pyserial/pyserial) by Chris Liechti, *BSD License*
 - [Configobj](https://github.com/DiffSK/configobj) by Michael Foord, Nicola Larosa, Rob Dennis & Eli Courtwright, *BSD License*
-- [Six](https://github.com/benjaminp/six) by [Benjamin Peterson](https://github.com/benjaminp), *MIT License*
-- [ifaddr](https://github.com/pydron/ifaddr) by [Pydron](https://github.com/pydron), *MIT License*
+- [ifaddr](https://github.com/pydron/ifaddr) by Stefan C. Mueller, *MIT License*
 - [Umsgpack.py](https://github.com/vsergeev/u-msgpack-python) by [Ivan A. Sergeev](https://github.com/vsergeev)
 - [Python](https://www.python.org)

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2022 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -11,8 +11,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -25,6 +33,7 @@
 import RNS
 import argparse
 import threading
+import shutil
 import time
 import sys
 import os
@@ -34,6 +43,8 @@ from RNS._version import __version__
 APP_NAME = "rncp"
 allow_all = False
 allow_fetch = False
+allow_overwrite_on_receive = False
+fetch_auto_compress = True
 fetch_jail = None
 save_path = None
 show_phy_rates = False
@@ -45,11 +56,15 @@ es = " "
 erase_str = "\33[2K\r"
 
 def listen(configdir, verbosity = 0, quietness = 0, allowed = [], display_identity = False,
-           limit = None, disable_auth = None, fetch_allowed = False, jail = None, save = None, announce = False):
+           limit = None, disable_auth = None, fetch_allowed = False, no_compress=False,
+           jail = None, save = None, announce = False, allow_overwrite=False):
+
     global allow_all, allow_fetch, allowed_identity_hashes, fetch_jail, save_path
-    from tempfile import TemporaryFile
+    global fetch_auto_compress, allow_overwrite_on_receive
 
     allow_fetch = fetch_allowed
+    fetch_auto_compress = not no_compress
+    allow_overwrite_on_receive = allow_overwrite
     identity = None
     if announce < 0:
         announce = False
@@ -68,10 +83,10 @@ def listen(configdir, verbosity = 0, quietness = 0, allowed = [], display_identi
                 save_path = sp
             else:
                 RNS.log("Output directory not writable", RNS.LOG_ERROR)
-                exit(4)
+                RNS.exit(4)
         else:
             RNS.log("Output directory not found", RNS.LOG_ERROR)
-            exit(3)
+            RNS.exit(3)
 
         RNS.log("Saving received files in \""+save_path+"\"", RNS.LOG_VERBOSE)
 
@@ -89,7 +104,7 @@ def listen(configdir, verbosity = 0, quietness = 0, allowed = [], display_identi
     if display_identity:
         print("Identity     : "+str(identity))
         print("Listening on : "+RNS.prettyhexrep(destination.hash))
-        exit(0)
+        RNS.exit(0)
 
     if disable_auth:
         allow_all = True
@@ -139,13 +154,13 @@ def listen(configdir, verbosity = 0, quietness = 0, allowed = [], display_identi
                         raise ValueError("Invalid destination entered. Check your input.")
                 except Exception as e:
                     print(str(e))
-                    exit(1)
+                    RNS.exit(1)
 
     if len(allowed_identity_hashes) < 1 and not disable_auth:
         print("Warning: No allowed identities configured, rncp will not accept any files!")
 
     def fetch_request(path, data, request_id, link_id, remote_identity, requested_at):
-        global allow_fetch, fetch_jail
+        global allow_fetch, fetch_jail, fetch_auto_compress
         if not allow_fetch:
             return REQ_FETCH_NOT_ALLOWED
 
@@ -171,22 +186,15 @@ def listen(configdir, verbosity = 0, quietness = 0, allowed = [], display_identi
             if target_link != None:
                 RNS.log("Sending file "+str(file_path)+" to client", RNS.LOG_VERBOSE)
 
-                temp_file = TemporaryFile()
-                real_file = open(file_path, "rb")
-                filename_bytes = os.path.basename(file_path).encode("utf-8")
-                filename_len = len(filename_bytes)
+                try:
+                    metadata = {"name": os.path.basename(file_path).encode("utf-8") }
+                    fetch_resource = RNS.Resource(open(file_path, "rb"), target_link, metadata=metadata, auto_compress=fetch_auto_compress)
+                    return True
 
-                if filename_len > 0xFFFF:
-                    print("Filename exceeds max size, cannot send")
-                    exit(1)
+                except Exception as e:
+                    RNS.log(f"Could not send file to client. The contained exception was: {e}", RNS.LOG_ERROR)
+                    return False
 
-                temp_file.write(filename_len.to_bytes(2, "big"))
-                temp_file.write(filename_bytes)
-                temp_file.write(real_file.read())
-                temp_file.seek(0)
-
-                fetch_resource = RNS.Resource(temp_file, target_link)
-                return True
             else:
                 return None
 
@@ -211,8 +219,7 @@ def listen(configdir, verbosity = 0, quietness = 0, allowed = [], display_identi
 
         threading.Thread(target=job, daemon=True).start()
     
-    while True:
-        time.sleep(1)
+    while True: time.sleep(1)
 
 def client_link_established(link):
     RNS.log("Incoming link established", RNS.LOG_VERBOSE)
@@ -257,34 +264,42 @@ def receive_resource_started(resource):
     print("Starting resource transfer "+RNS.prettyhexrep(resource.hash)+id_str)
 
 def receive_resource_concluded(resource):
-    global save_path
+    global save_path, allow_overwrite_on_receive
     if resource.status == RNS.Resource.COMPLETE:
         print(str(resource)+" completed")
 
-        if resource.total_size > 4:
-            filename_len = int.from_bytes(resource.data.read(2), "big")
-            filename = resource.data.read(filename_len).decode("utf-8")
-
-            counter = 0
-            if save_path:
-                saved_filename = os.path.abspath(os.path.expanduser(save_path+"/"+filename))
-                if not saved_filename.startswith(save_path+"/"):
-                    RNS.log(f"Invalid save path {saved_filename}, ignoring", RNS.LOG_ERROR)
-                    return
-            else:
-                saved_filename = filename
-
-            full_save_path = saved_filename
-            while os.path.isfile(full_save_path):
-                counter += 1
-                full_save_path = saved_filename+"."+str(counter)
-            
-            file = open(full_save_path, "wb")
-            file.write(resource.data.read())
-            file.close()
+        if resource.metadata == None:
+            print("Invalid data received, ignoring resource")
+            return
 
         else:
-            print("Invalid data received, ignoring resource")
+            try:
+                filename = os.path.basename(resource.metadata["name"].decode("utf-8"))
+                counter = 0
+                if save_path:
+                    saved_filename = os.path.abspath(os.path.expanduser(save_path+"/"+filename))
+                    if not saved_filename.startswith(save_path+"/"):
+                        RNS.log(f"Invalid save path {saved_filename}, ignoring", RNS.LOG_ERROR)
+                        return
+                else:
+                    saved_filename = filename
+
+                full_save_path = saved_filename
+                if allow_overwrite_on_receive:
+                    if os.path.isfile(full_save_path):
+                        try: os.unlink(full_save_path)
+                        except Exception as e:
+                            RNS.log(f"Could not overwrite existing file {full_save_path}, renaming instead", RNS.LOG_ERROR)
+
+                while os.path.isfile(full_save_path):
+                    counter += 1
+                    full_save_path = saved_filename+"."+str(counter)
+
+                shutil.move(resource.data.name, full_save_path)
+
+            except Exception as e:
+                RNS.log(f"An error occurred while saving received resource: {e}", RNS.LOG_ERROR)
+                return
 
     else:
         print("Resource failed")
@@ -294,9 +309,10 @@ current_resource = None
 stats = []
 speed = 0.0
 phy_speed = 0.0
+phy_got_total = 0
 def sender_progress(resource):
     stats_max = 32
-    global current_resource, stats, speed, phy_speed, resource_done
+    global current_resource, stats, speed, phy_speed, phy_got_total, resource_done
     current_resource = resource
     
     now = time.time()
@@ -321,6 +337,7 @@ def sender_progress(resource):
         phy_diff = phy_got - stats[0][2]
         if phy_diff > 0:
             phy_speed = phy_diff/span
+            # phy_got_total += phy_diff
 
     if resource.status < RNS.Resource.COMPLETE:
         resource_done = False
@@ -328,10 +345,11 @@ def sender_progress(resource):
         resource_done = True
 
 link = None
-def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = None, timeout = RNS.Transport.PATH_REQUEST_TIMEOUT, silent=False, phy_rates=False, save=None):
-    global current_resource, resource_done, link, speed, show_phy_rates, save_path
+def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = None, timeout = RNS.Transport.PATH_REQUEST_TIMEOUT, silent=False, phy_rates=False, save=None, allow_overwrite=False):
+    global current_resource, resource_done, link, speed, show_phy_rates, save_path, allow_overwrite_on_receive
     targetloglevel = 3+verbosity-quietness
     show_phy_rates = phy_rates
+    allow_overwrite_on_receive = allow_overwrite
 
     if save:
         sp = os.path.abspath(os.path.expanduser(save))
@@ -340,10 +358,10 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
                 save_path = sp
             else:
                 RNS.log("Output directory not writable", RNS.LOG_ERROR)
-                exit(4)
+                RNS.exit(4)
         else:
             RNS.log("Output directory not found", RNS.LOG_ERROR)
-            exit(3)
+            RNS.exit(3)
 
     try:
         dest_len = (RNS.Reticulum.TRUNCATED_HASHLENGTH//8)*2
@@ -355,7 +373,7 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
             raise ValueError("Invalid destination entered. Check your input.")
     except Exception as e:
         print(str(e))
-        exit(1)
+        RNS.exit(1)
 
     reticulum = RNS.Reticulum(configdir=configdir, loglevel=targetloglevel)
 
@@ -364,7 +382,7 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
         identity = RNS.Identity.from_file(identity_path)
         if identity == None:
             RNS.log("Could not load identity for rncp. The identity file at \""+str(identity_path)+"\" may be corrupt or unreadable.", RNS.LOG_ERROR)
-            exit(2)
+            RNS.exit(2)
     else:
         identity = None
 
@@ -396,7 +414,7 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
             print("Path not found")
         else:
             print(f"{erase_str}Path not found")
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print("Establishing link with "+RNS.prettyhexrep(destination_hash))
@@ -425,7 +443,7 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
             print("Could not establish link with "+RNS.prettyhexrep(destination_hash))
         else:
             print(f"{erase_str}Could not establish link with "+RNS.prettyhexrep(destination_hash))
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print("Requesting file from remote...")
@@ -439,6 +457,7 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
     resource_resolved = False
     resource_status = "unrequested"
     current_resource = None
+    current_transfer_started = None
     def request_response(request_receipt):
         nonlocal request_resolved, request_status
         if request_receipt.response == False:
@@ -458,39 +477,48 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
         request_resolved = True
 
     def fetch_resource_started(resource):
-        nonlocal resource_status
+        nonlocal resource_status, current_transfer_started
         current_resource = resource
         current_resource.progress_callback(sender_progress)
         resource_status = "started"
+        if not current_transfer_started: current_transfer_started = time.time()
 
     def fetch_resource_concluded(resource):
         nonlocal resource_resolved, resource_status
-        global save_path
+        global save_path, allow_overwrite_on_receive
         if resource.status == RNS.Resource.COMPLETE:
-            if resource.total_size > 4:
-                filename_len = int.from_bytes(resource.data.read(2), "big")
-                filename = resource.data.read(filename_len).decode("utf-8")
-
-                counter = 0
-                if save_path:
-                    saved_filename = os.path.abspath(os.path.expanduser(save_path+"/"+filename))
-
-                else:
-                    saved_filename = filename
-
-                full_save_path = saved_filename
-                while os.path.isfile(full_save_path):
-                    counter += 1
-                    full_save_path = saved_filename+"."+str(counter)
- 
-                file = open(full_save_path, "wb")
-                file.write(resource.data.read())
-                file.close()
-                resource_status = "completed"
+            if resource.metadata == None:
+                print("Invalid data received, ignoring resource")
+                return
 
             else:
-                print("Invalid data received, ignoring resource")
-                resource_status = "invalid_data"
+                try:
+                    filename = os.path.basename(resource.metadata["name"].decode("utf-8"))
+                    counter = 0
+                    if save_path:
+                        saved_filename = os.path.abspath(os.path.expanduser(save_path+"/"+filename))
+                        if not saved_filename.startswith(save_path+"/"):
+                            print(f"Invalid save path {saved_filename}, ignoring")
+                            return
+                    else:
+                        saved_filename = filename
+
+                    full_save_path = saved_filename
+                    if allow_overwrite_on_receive:
+                        if os.path.isfile(full_save_path):
+                            try: os.unlink(full_save_path)
+                            except Exception as e:
+                                print(f"Could not overwrite existing file {full_save_path}, renaming instead")
+
+                    while os.path.isfile(full_save_path):
+                        counter += 1
+                        full_save_path = saved_filename+"."+str(counter)
+
+                    shutil.move(resource.data.name, full_save_path)
+
+                except Exception as e:
+                    print(f"An error occurred while saving received resource: {e}")
+                    return
 
         else:
             print("Resource failed")
@@ -516,25 +544,25 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
         print("Fetch request failed, fetching the file "+str(file)+" was not allowed by the remote")
         link.teardown()
         time.sleep(0.15)
-        exit(0)
+        RNS.exit(0)
     elif request_status == "not_found":
         if not silent: print(f"{erase_str}", end="")
         print("Fetch request failed, the file "+str(file)+" was not found on the remote")
         link.teardown()
         time.sleep(0.15)
-        exit(0)
+        RNS.exit(0)
     elif request_status == "remote_error":
         if not silent: print(f"{erase_str}", end="")
         print("Fetch request failed due to an error on the remote system")
         link.teardown()
         time.sleep(0.15)
-        exit(0)
+        RNS.exit(0)
     elif request_status == "unknown":
         if not silent: print(f"{erase_str}", end="")
         print("Fetch request failed due to an unknown error (probably not authorised)")
         link.teardown()
         time.sleep(0.15)
-        exit(0)
+        RNS.exit(0)
     elif request_status == "found":
         if not silent: print(f"{erase_str}", end="")
 
@@ -556,34 +584,38 @@ def fetch(configdir, verbosity = 0, quietness = 0, destination = None, file = No
                 if prg != 1.0:
                     print(f"{erase_str}Transferring file {syms[i]} {stat_str}", end=es)
                 else:
+                    end_time = time.time(); delta_time = end_time - current_transfer_started
+                    speed = current_resource.total_size/delta_time; dt_str = RNS.prettytime(delta_time)
+                    ss = size_str(speed, "b")
+                    stat_str = f"{percent}% - {ps} of {ts} in {dt_str} - {ss}ps{phy_str}"
                     print(f"{erase_str}Transfer complete  {stat_str}", end=es)
             else:
                 print(f"{erase_str}Waiting for transfer to start {syms[i]} ", end=es)
             sys.stdout.flush()
             i = (i+1)%len(syms)
 
-    if current_resource.status != RNS.Resource.COMPLETE:
+    if not current_resource or current_resource.status != RNS.Resource.COMPLETE:
         if silent:
             print("The transfer failed")
         else:
             print(f"{erase_str}The transfer failed")
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print(str(file)+" fetched from "+RNS.prettyhexrep(destination_hash))
         else:
             print("\n"+str(file)+" fetched from "+RNS.prettyhexrep(destination_hash))
         link.teardown()
-        time.sleep(0.15)
-        exit(0)
+        time.sleep(0.1)
+        RNS.exit(0)
 
     link.teardown()
-    exit(0)
+    time.sleep(0.1)
+    RNS.exit(0)
 
 
-def send(configdir, verbosity = 0, quietness = 0, destination = None, file = None, timeout = RNS.Transport.PATH_REQUEST_TIMEOUT, silent=False, phy_rates=False):
-    global current_resource, resource_done, link, speed, show_phy_rates
-    from tempfile import TemporaryFile
+def send(configdir, verbosity = 0, quietness = 0, destination = None, file = None, timeout = RNS.Transport.PATH_REQUEST_TIMEOUT, silent=False, phy_rates=False, no_compress=False):
+    global current_resource, resource_done, link, speed, show_phy_rates, phy_got_total, phy_speed
     targetloglevel = 3+verbosity-quietness
     show_phy_rates = phy_rates
 
@@ -597,29 +629,15 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             raise ValueError("Invalid destination entered. Check your input.")
     except Exception as e:
         print(str(e))
-        exit(1)
+        RNS.exit(1)
 
     
     file_path = os.path.expanduser(file)
     if not os.path.isfile(file_path):
         print("File not found")
-        exit(1)
+        sys.exit(1)
 
-    temp_file = TemporaryFile()
-    real_file = open(file_path, "rb")
-    filename_bytes = os.path.basename(file_path).encode("utf-8")
-    filename_len = len(filename_bytes)
-
-    if filename_len > 0xFFFF:
-        print("Filename exceeds max size, cannot send")
-        exit(1)
-    else:
-        print("Preparing file...", end=es)
-
-    temp_file.write(filename_len.to_bytes(2, "big"))
-    temp_file.write(filename_bytes)
-    temp_file.write(real_file.read())
-    temp_file.seek(0)
+    metadata = {"name": os.path.basename(file_path).encode("utf-8") }
 
     print(f"{erase_str}", end="")
 
@@ -630,7 +648,7 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
         identity = RNS.Identity.from_file(identity_path)
         if identity == None:
             RNS.log("Could not load identity for rncp. The identity file at \""+str(identity_path)+"\" may be corrupt or unreadable.", RNS.LOG_ERROR)
-            exit(2)
+            RNS.exit(2)
     else:
         identity = None
 
@@ -662,7 +680,7 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             print("Path not found")
         else:
             print(f"{erase_str}Path not found")
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print("Establishing link with "+RNS.prettyhexrep(destination_hash))
@@ -691,13 +709,13 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             print("Link establishment with "+RNS.prettyhexrep(destination_hash)+" timed out")
         else:
             print(f"{erase_str}Link establishment with "+RNS.prettyhexrep(destination_hash)+" timed out")
-        exit(1)
+        RNS.exit(1)
     elif not RNS.Transport.has_path(destination_hash):
         if silent:
             print("No path found to "+RNS.prettyhexrep(destination_hash))
         else:
             print(f"{erase_str}No path found to "+RNS.prettyhexrep(destination_hash))
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print("Advertising file resource...")
@@ -705,7 +723,13 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             print(f"{erase_str}Advertising file resource  ", end=es)
 
     link.identify(identity)
-    resource = RNS.Resource(temp_file, link, callback = sender_progress, progress_callback = sender_progress)
+    auto_compress = True
+    if no_compress: auto_compress = False
+    try: resource = RNS.Resource(open(file_path, "rb"), link, metadata=metadata, callback = sender_progress, progress_callback = sender_progress, auto_compress = auto_compress)
+    except Exception as e:
+        print(f"Could not start transfer: {e}")
+        RNS.exit(1)
+
     current_resource = resource
 
     while resource.status < RNS.Resource.TRANSFERRING:
@@ -715,13 +739,14 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             sys.stdout.flush()
             i = (i+1)%len(syms)
 
+    resource_started_at = time.time()
     
     if resource.status > RNS.Resource.COMPLETE:
         if silent:
             print("File was not accepted by "+RNS.prettyhexrep(destination_hash))
         else:
             print(f"{erase_str}File was not accepted by "+RNS.prettyhexrep(destination_hash))
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print("Transferring file...")
@@ -732,7 +757,7 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
         time.sleep(0.1)
         prg = current_resource.get_progress()
         percent = round(prg * 100.0, 1)
-        if show_phy_rates:
+        if show_phy_rates and not resource_done:
             pss = size_str(phy_speed, "b")
             phy_str = f" ({pss}ps at physical layer)"
         else:
@@ -754,6 +779,11 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
         if not silent:
             i = progress_update(i)
 
+    resource_concluded_at = time.time()
+    transfer_time = resource_concluded_at - resource_started_at
+    speed = current_resource.total_size/transfer_time
+    # phy_speed = phy_got_total/transfer_time
+
     if not silent:
         i = progress_update(i, done=True)
 
@@ -762,7 +792,7 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             print("The transfer failed")
         else:
             print(f"{erase_str}The transfer failed")
-        exit(1)
+        RNS.exit(1)
     else:
         if silent:
             print(str(file_path)+" copied to "+RNS.prettyhexrep(destination_hash))
@@ -770,9 +800,7 @@ def send(configdir, verbosity = 0, quietness = 0, destination = None, file = Non
             print("\n"+str(file_path)+" copied to "+RNS.prettyhexrep(destination_hash))
         link.teardown()
         time.sleep(0.25)
-        real_file.close()
-        temp_file.close()
-        exit(0)
+        RNS.exit(0)
 
 def main():
     try:
@@ -784,10 +812,12 @@ def main():
         parser.add_argument('-q', '--quiet', action='count', default=0, help="decrease verbosity")
         parser.add_argument("-S", '--silent', action='store_true', default=False, help="disable transfer progress output")
         parser.add_argument("-l", '--listen', action='store_true', default=False, help="listen for incoming transfer requests")
+        parser.add_argument("-C", '--no-compress', action='store_true', default=False, help="disable automatic compression")
         parser.add_argument("-F", '--allow-fetch', action='store_true', default=False, help="allow authenticated clients to fetch files")
         parser.add_argument("-f", '--fetch', action='store_true', default=False, help="fetch file from remote listener instead of sending")
         parser.add_argument("-j", "--jail", metavar="path", action="store", default=None, help="restrict fetch requests to specified path", type=str)
         parser.add_argument("-s", "--save", metavar="path", action="store", default=None, help="save received files in specified path", type=str)
+        parser.add_argument('-O', '--overwrite', action='store_true', default=False, help="Allow overwriting received files, instead of adding postfix")
         parser.add_argument("-b", action='store', metavar="seconds", default=-1, help="announce interval, 0 to only announce at startup", type=int)
         parser.add_argument('-a', metavar="allowed_hash", dest="allowed", action='append', help="allow this identity (or add in ~/.rncp/allowed_identities)", type=str)
         parser.add_argument('-n', '--no-auth', action='store_true', default=False, help="accept requests from anyone")
@@ -806,12 +836,14 @@ def main():
                 quietness=args.quiet,
                 allowed = args.allowed,
                 fetch_allowed = args.allow_fetch,
+                no_compress = args.no_compress,
                 jail = args.jail,
                 save = args.save,
                 display_identity=args.print_identity,
                 # limit=args.limit,
                 disable_auth=args.no_auth,
                 announce=args.b,
+                allow_overwrite=args.overwrite,
             )
 
         elif args.fetch:
@@ -826,6 +858,7 @@ def main():
                     silent = args.silent,
                     phy_rates = args.phy_rates,
                     save = args.save,
+                    allow_overwrite=args.overwrite,
                 )
             else:
                 print("")
@@ -842,6 +875,7 @@ def main():
                 timeout = args.w,
                 silent = args.silent,
                 phy_rates = args.phy_rates,
+                no_compress = args.no_compress,
             )
 
         else:
@@ -855,7 +889,7 @@ def main():
             resource.cancel()
         if link != None:
             link.teardown()
-        exit()
+        RNS.exit()
 
 def size_str(num, suffix='B'):
     units = ['','K','M','G','T','P','E','Z']

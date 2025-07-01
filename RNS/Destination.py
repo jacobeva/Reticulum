@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2024 Mark Qvist / unsigned.io and contributors
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -192,7 +200,7 @@ class Destination:
         """
         :returns: A human-readable representation of the destination including addressable hash and full name.
         """
-        return "<"+self.name+"/"+self.hexhash+">"
+        return "<"+self.name+":"+self.hexhash+">"
 
     def _clean_ratchets(self):
         if self.ratchets != None:
@@ -202,12 +210,16 @@ class Destination:
     def _persist_ratchets(self):
         try:
             with self.ratchet_file_lock:
+                temp_write_path = self.ratchets_path+".tmp"
                 packed_ratchets = umsgpack.packb(self.ratchets)
                 persisted_data = {"signature": self.sign(packed_ratchets), "ratchets": packed_ratchets}
-                ratchets_file = open(self.ratchets_path, "wb")
+                ratchets_file = open(temp_write_path, "wb")
                 ratchets_file.write(umsgpack.packb(persisted_data))
                 ratchets_file.close()
+                if os.path.isfile(self.ratchets_path): os.unlink(self.ratchets_path)
+                os.rename(temp_write_path, self.ratchets_path)
         except Exception as e:
+            RNS.trace_exception(e)
             self.ratchets = None
             self.ratchets_path = None
             raise OSError("Could not write ratchet file contents for "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
@@ -365,7 +377,7 @@ class Destination:
         else:
             self.proof_strategy = proof_strategy
 
-    def register_request_handler(self, path, response_generator = None, allow = ALLOW_NONE, allowed_list = None):
+    def register_request_handler(self, path, response_generator = None, allow = ALLOW_NONE, allowed_list = None, auto_compress = True):
         """
         Registers a request handler.
 
@@ -373,17 +385,15 @@ class Destination:
         :param response_generator: A function or method with the signature *response_generator(path, data, request_id, link_id, remote_identity, requested_at)* to be called. Whatever this funcion returns will be sent as a response to the requester. If the function returns ``None``, no response will be sent.
         :param allow: One of ``RNS.Destination.ALLOW_NONE``, ``RNS.Destination.ALLOW_ALL`` or ``RNS.Destination.ALLOW_LIST``. If ``RNS.Destination.ALLOW_LIST`` is set, the request handler will only respond to requests for identified peers in the supplied list.
         :param allowed_list: A list of *bytes-like* :ref:`RNS.Identity<api-identity>` hashes.
+        :param auto_compress: If ``True`` or ``False``, determines whether automatic compression of responses should be carried out. If set to an integer value, responses will only be auto-compressed if under this size in bytes. If omitted, the default compression settings will be followed.
         :raises: ``ValueError`` if any of the supplied arguments are invalid.
         """
-        if path == None or path == "":
-            raise ValueError("Invalid path specified")
-        elif not callable(response_generator):
-            raise ValueError("Invalid response generator specified")
-        elif not allow in Destination.request_policies:
-            raise ValueError("Invalid request policy")
+        if path == None or path == "": raise ValueError("Invalid path specified")
+        elif not callable(response_generator): raise ValueError("Invalid response generator specified")
+        elif not allow in Destination.request_policies: raise ValueError("Invalid request policy")
         else:
             path_hash = RNS.Identity.truncated_hash(path.encode("utf-8"))
-            request_handler = [path, response_generator, allow, allowed_list]
+            request_handler = [path, response_generator, allow, allowed_list, auto_compress]
             self.request_handlers[path_hash] = request_handler
 
     def deregister_request_handler(self, path):
@@ -407,13 +417,16 @@ class Destination:
         else:
             plaintext = self.decrypt(packet.data)
             packet.ratchet_id = self.latest_ratchet_id
-            if plaintext != None:
+            if plaintext == None: return False
+            else:
                 if packet.packet_type == RNS.Packet.DATA:
                     if self.callbacks.packet != None:
                         try:
                             self.callbacks.packet(plaintext, packet)
                         except Exception as e:
                             RNS.log("Error while executing receive callback from "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
+
+                return True
 
     def incoming_link_request(self, data, packet):
         if self.accept_link_requests:
@@ -424,7 +437,7 @@ class Destination:
     def _reload_ratchets(self, ratchets_path):
         if os.path.isfile(ratchets_path):
             with self.ratchet_file_lock:
-                try:
+                def load_attempt():
                     ratchets_file = open(ratchets_path, "rb")
                     persisted_data = umsgpack.unpackb(ratchets_file.read())
                     if "signature" in persisted_data and "ratchets" in persisted_data:
@@ -433,11 +446,24 @@ class Destination:
                             self.ratchets_path = ratchets_path
                         else:
                             raise KeyError("Invalid ratchet file signature")
+                
+                try:
+                    try:
+                        load_attempt()
+
+                    except Exception as e:
+                        RNS.trace_exception(e)
+                        RNS.log(f"First ratchet reload attempt for {self} failed. Possible I/O conflict. Retrying in 500ms.", RNS.LOG_ERROR)
+                        time.sleep(0.5)
+                        load_attempt()
+                        RNS.log(f"Ratchet reload retry succeeded", RNS.LOG_DEBUG)
 
                 except Exception as e:
                     self.ratchets = None
                     self.ratchets_path = None
+                    RNS.trace_exception(e)
                     raise OSError("Could not read ratchet file contents for "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
+
         else:
             RNS.log("No existing ratchet data found, initialising new ratchet file for "+str(self), RNS.LOG_DEBUG)
             self.ratchets = []
@@ -463,7 +489,6 @@ class Destination:
             self.latest_ratchet_time = 0
             self._reload_ratchets(ratchets_path)
 
-            # TODO: Remove at some point
             RNS.log("Ratchets enabled on "+str(self), RNS.LOG_DEBUG)
             return True
 
@@ -617,7 +642,7 @@ class Destination:
                         RNS.log(f"Decryption still failing after ratchet reload. The contained exception was: {e}", RNS.LOG_ERROR)
                         raise e
 
-                    RNS.log("Decryption succeeded after ratchet reload", RNS.LOG_NOTICE)
+                    if decrypted: RNS.log("Decryption succeeded after ratchet reload", RNS.LOG_NOTICE)
 
                 return decrypted
 

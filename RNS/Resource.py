@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2023 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -25,6 +33,7 @@ import os
 import bz2
 import math
 import time
+import struct
 import tempfile
 import threading
 from threading import Lock
@@ -99,22 +108,20 @@ class Resource:
     # it is to be handled within reasonable
     # time constraint, even on small systems.
     #
-    # A small system in this regard is
-    # defined as a Raspberry Pi, which should
-    # be able to compress, encrypt and hash-map
-    # the resource in about 10 seconds.
-    #
     # This constant will be used when determining
     # how to sequence the sending of large resources.
     #
     # Capped at 16777215 (0xFFFFFF) per segment to
     # fit in 3 bytes in resource advertisements.
-    MAX_EFFICIENT_SIZE      = 16 * 1024 * 1024 - 1
+    MAX_EFFICIENT_SIZE      = 1 * 1024 * 1024 - 1
     RESPONSE_MAX_GRACE_TIME = 10
+
+    # Max metadata size is 16777215 (0xFFFFFF) bytes
+    METADATA_MAX_SIZE       = 16 * 1024 * 1024 - 1
     
     # The maximum size to auto-compress with
     # bz2 before sending.
-    AUTO_COMPRESS_MAX_SIZE = MAX_EFFICIENT_SIZE
+    AUTO_COMPRESS_MAX_SIZE = 64 * 1024 * 1024
 
     PART_TIMEOUT_FACTOR           = 4
     PART_TIMEOUT_FACTOR_AFTER_RTT = 2
@@ -141,6 +148,19 @@ class Resource:
     COMPLETE        = 0x06
     FAILED          = 0x07
     CORRUPT         = 0x08
+    REJECTED        = 0x00
+
+    @staticmethod
+    def reject(advertisement_packet):
+        try:
+            adv = ResourceAdvertisement.unpack(advertisement_packet.plaintext)
+            resource_hash = adv.h
+            reject_packet = RNS.Packet(advertisement_packet.link, resource_hash, context=RNS.Packet.RESOURCE_RCL)
+            reject_packet.send()
+
+        except Exception as e:
+            RNS.log(f"An error ocurred while rejecting advertised resource: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
 
     @staticmethod
     def accept(advertisement_packet, callback=None, progress_callback = None, request_id = None):
@@ -150,42 +170,53 @@ class Resource:
             resource = Resource(None, advertisement_packet.link, request_id = request_id)
             resource.status = Resource.TRANSFERRING
 
-            resource.flags               = adv.f
-            resource.size                = adv.t
-            resource.total_size          = adv.d
-            resource.uncompressed_size   = adv.d
-            resource.hash                = adv.h
-            resource.original_hash       = adv.o
-            resource.random_hash         = adv.r
-            resource.hashmap_raw         = adv.m
-            resource.encrypted           = True if resource.flags & 0x01 else False
-            resource.compressed          = True if resource.flags >> 1 & 0x01 else False
-            resource.initiator           = False
-            resource.callback            = callback
-            resource.__progress_callback = progress_callback
-            resource.total_parts         = int(math.ceil(resource.size/float(Resource.SDU)))
-            resource.received_count      = 0
-            resource.outstanding_parts   = 0
-            resource.parts               = [None] * resource.total_parts
-            resource.window              = Resource.WINDOW
-            resource.window_max          = Resource.WINDOW_MAX_SLOW
-            resource.window_min          = Resource.WINDOW_MIN
-            resource.window_flexibility  = Resource.WINDOW_FLEXIBILITY
-            resource.last_activity       = time.time()
+            resource.flags                = adv.f
+            resource.size                 = adv.t
+            resource.total_size           = adv.d
+            resource.uncompressed_size    = adv.d
+            resource.hash                 = adv.h
+            resource.original_hash        = adv.o
+            resource.random_hash          = adv.r
+            resource.hashmap_raw          = adv.m
+            resource.encrypted            = True if resource.flags & 0x01 else False
+            resource.compressed           = True if resource.flags >> 1 & 0x01 else False
+            resource.initiator            = False
+            resource.callback             = callback
+            resource.__progress_callback  = progress_callback
+            resource.total_parts          = int(math.ceil(resource.size/float(resource.sdu)))
+            resource.received_count       = 0
+            resource.outstanding_parts    = 0
+            resource.parts                = [None] * resource.total_parts
+            resource.window               = Resource.WINDOW
+            resource.window_max           = Resource.WINDOW_MAX_SLOW
+            resource.window_min           = Resource.WINDOW_MIN
+            resource.window_flexibility   = Resource.WINDOW_FLEXIBILITY
+            resource.last_activity        = time.time()
+            resource.started_transferring = resource.last_activity
 
-            resource.storagepath         = RNS.Reticulum.resourcepath+"/"+resource.original_hash.hex()
-            resource.segment_index       = adv.i
-            resource.total_segments      = adv.l
-            if adv.l > 1:
-                resource.split = True
-            else:
-                resource.split = False
+            resource.storagepath          = RNS.Reticulum.resourcepath+"/"+resource.original_hash.hex()
+            resource.meta_storagepath     = resource.storagepath+".meta"
+            resource.segment_index        = adv.i
+            resource.total_segments       = adv.l
+            
+            if adv.l > 1: resource.split = True
+            else: resource.split = False
+
+            if adv.x: resource.has_metadata = True
+            else:     resource.has_metadata = False
 
             resource.hashmap = [None] * resource.total_parts
             resource.hashmap_height = 0
             resource.waiting_for_hmu = False
             resource.receiving_part = False
             resource.consecutive_completed_height = -1
+
+            previous_window = resource.link.get_last_resource_window()
+            previous_eifr   = resource.link.get_last_resource_eifr()
+            if previous_window:
+                resource.window = previous_window
+            if previous_eifr:
+                resource.previous_eifr = previous_eifr
             
             if not resource.link.has_incoming_resource(resource):
                 resource.link.register_incoming_resource(resource)
@@ -198,9 +229,7 @@ class Resource:
                         RNS.log("Error while executing resource started callback from "+str(resource)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
 
                 resource.hashmap_update(0, resource.hashmap_raw)
-
                 resource.watchdog_job()
-
                 return resource
 
             else:
@@ -214,15 +243,33 @@ class Resource:
     # Create a resource for transmission to a remote destination
     # The data passed can be either a bytes-array or a file opened
     # in binary read mode.
-    def __init__(self, data, link, advertise=True, auto_compress=True, callback=None, progress_callback=None, timeout = None, segment_index = 1, original_hash = None, request_id = None, is_response = False):
+    def __init__(self, data, link, metadata=None, advertise=True, auto_compress=True, callback=None, progress_callback=None,
+                 timeout = None, segment_index = 1, original_hash = None, request_id = None, is_response = False, sent_metadata_size=0):
+        
         data_size = None
         resource_data = None
         self.assembly_lock = False
         self.preparing_next_segment = False
         self.next_segment = None
+        self.metadata = None
+        self.has_metadata = False
+        self.metadata_size = sent_metadata_size
+
+        if metadata != None:
+            packed_metadata = umsgpack.packb(metadata)
+            metadata_size   = len(packed_metadata)
+            if metadata_size > Resource.METADATA_MAX_SIZE:
+                raise SystemError("Resource metadata size exceeded")
+            else:
+                self.metadata = struct.pack(">I", metadata_size)[1:] + packed_metadata
+                self.metadata_size = len(self.metadata)
+                self.has_metadata = True
+        else:
+            self.metadata = b""
+            if sent_metadata_size > 0: self.has_metadata = True
 
         if data != None:
-            if not hasattr(data, "read") and len(data) > Resource.MAX_EFFICIENT_SIZE:
+            if not hasattr(data, "read") and self.metadata_size + len(data) > Resource.MAX_EFFICIENT_SIZE:
                 original_data = data
                 data_size = len(original_data)
                 data = tempfile.TemporaryFile()
@@ -230,31 +277,43 @@ class Resource:
                 del original_data
 
         if hasattr(data, "read"):
-            if data_size == None:
-                data_size = os.stat(data.name).st_size
+            if data_size == None: data_size = os.stat(data.name).st_size
+            self.total_size = data_size + self.metadata_size
 
-            self.total_size = data_size
-
-            if data_size <= Resource.MAX_EFFICIENT_SIZE:
+            if self.total_size <= Resource.MAX_EFFICIENT_SIZE:
                 self.total_segments = 1
                 self.segment_index  = 1
                 self.split          = False
                 resource_data = data.read()
                 data.close()
+
             else:
-                self.total_segments = ((data_size-1)//Resource.MAX_EFFICIENT_SIZE)+1
+                # self.total_segments = ((data_size-1)//Resource.MAX_EFFICIENT_SIZE)+1
+                # self.segment_index  = segment_index
+                # self.split          = True
+                # seek_index          = segment_index-1
+                # seek_position       = seek_index*Resource.MAX_EFFICIENT_SIZE
+
+                self.total_segments = ((self.total_size-1)//Resource.MAX_EFFICIENT_SIZE)+1
                 self.segment_index  = segment_index
                 self.split          = True
                 seek_index          = segment_index-1
-                seek_position       = seek_index*Resource.MAX_EFFICIENT_SIZE
+                first_read_size     = Resource.MAX_EFFICIENT_SIZE - self.metadata_size
+
+                if segment_index == 1:
+                    seek_position     = 0
+                    segment_read_size = first_read_size
+                else:
+                    seek_position     = first_read_size + ((seek_index-1)*Resource.MAX_EFFICIENT_SIZE)
+                    segment_read_size = Resource.MAX_EFFICIENT_SIZE
 
                 data.seek(seek_position)
-                resource_data = data.read(Resource.MAX_EFFICIENT_SIZE)
+                resource_data = data.read(segment_read_size)
                 self.input_file = data
 
         elif isinstance(data, bytes):
             data_size = len(data)
-            self.total_size  = data_size
+            self.total_size = data_size + self.metadata_size
             
             resource_data = data
             self.total_segments = 1
@@ -267,10 +326,16 @@ class Resource:
         else:
             raise TypeError("Invalid data instance type passed to resource initialisation")
 
-        data = resource_data
+        if resource_data:
+            if self.has_metadata: data = self.metadata + resource_data
+            else:                 data = resource_data
 
         self.status = Resource.NONE
         self.link = link
+        if self.link.mtu:
+            self.sdu = self.link.mtu - RNS.Reticulum.HEADER_MAXSIZE - RNS.Reticulum.IFAC_MIN_SIZE
+        else:
+            self.sdu = link.mdu or Resource.SDU
         self.max_retries = Resource.MAX_RETRIES
         self.max_adv_retries = Resource.MAX_ADV_RETRIES
         self.retries_left = self.max_retries
@@ -286,10 +351,24 @@ class Resource:
         self.req_sent = 0
         self.req_resp_rtt_rate = 0
         self.rtt_rxd_bytes_at_part_req = 0
+        self.req_data_rtt_rate = 0
+        self.eifr = None
+        self.previous_eifr = None
         self.fast_rate_rounds = 0
         self.very_slow_rate_rounds = 0
         self.request_id = request_id
+        self.started_transferring = None
         self.is_response = is_response
+        self.auto_compress_limit = Resource.AUTO_COMPRESS_MAX_SIZE
+        self.auto_compress_option = auto_compress
+
+        if type(auto_compress) == bool:
+            self.auto_compress = auto_compress
+        elif type(auto_compress) == int:
+            self.auto_compress = True
+            self.auto_compress_limit = auto_compress
+        else:
+            raise TypeError(f"Invalid type {type(auto_compress)} for auto_compress option")
 
         self.req_hashlist = []
         self.receiver_min_consecutive_height = 0
@@ -305,10 +384,10 @@ class Resource:
             self.uncompressed_data = data
 
             compression_began = time.time()
-            if (auto_compress and len(self.uncompressed_data) <= Resource.AUTO_COMPRESS_MAX_SIZE):
-                RNS.log("Compressing resource data...", RNS.LOG_DEBUG)
+            if self.auto_compress and data_size <= self.auto_compress_limit:
+                RNS.log("Compressing resource data...", RNS.LOG_EXTREME)
                 self.compressed_data   = bz2.compress(self.uncompressed_data)
-                RNS.log("Compression completed in "+str(round(time.time()-compression_began, 3))+" seconds", RNS.LOG_DEBUG)
+                RNS.log("Compression completed in "+str(round(time.time()-compression_began, 3))+" seconds", RNS.LOG_EXTREME)
             else:
                 self.compressed_data   = self.uncompressed_data
 
@@ -317,25 +396,26 @@ class Resource:
 
             if (self.compressed_size < self.uncompressed_size and auto_compress):
                 saved_bytes = len(self.uncompressed_data) - len(self.compressed_data)
-                RNS.log("Compression saved "+str(saved_bytes)+" bytes, sending compressed", RNS.LOG_DEBUG)
+                RNS.log("Compression saved "+str(saved_bytes)+" bytes, sending compressed", RNS.LOG_EXTREME)
 
                 self.data  = b""
                 self.data += RNS.Identity.get_random_hash()[:Resource.RANDOM_HASH_SIZE]
                 self.data += self.compressed_data
                 
                 self.compressed = True
-                self.uncompressed_data = None
 
             else:
                 self.data  = b""
                 self.data += RNS.Identity.get_random_hash()[:Resource.RANDOM_HASH_SIZE]
                 self.data += self.uncompressed_data
-                self.uncompressed_data = self.data
 
                 self.compressed = False
                 self.compressed_data = None
-                if auto_compress:
-                    RNS.log("Compression did not decrease size, sending uncompressed", RNS.LOG_DEBUG)
+                if self.auto_compress and data_size <= self.auto_compress_limit:
+                    RNS.log("Compression did not decrease size, sending uncompressed", RNS.LOG_EXTREME)
+
+            self.compressed_data = None
+            self.uncompressed_data = None
 
             # Resources handle encryption directly to
             # make optimal use of packet MTU on an entire
@@ -346,13 +426,13 @@ class Resource:
 
             self.size = len(self.data)
             self.sent_parts = 0
-            hashmap_entries = int(math.ceil(self.size/float(Resource.SDU)))
+            hashmap_entries = int(math.ceil(self.size/float(self.sdu)))
             self.total_parts = hashmap_entries
                 
             hashmap_ok = False
             while not hashmap_ok:
                 hashmap_computation_began = time.time()
-                RNS.log("Starting resource hashmap computation with "+str(hashmap_entries)+" entries...", RNS.LOG_DEBUG)
+                RNS.log("Starting resource hashmap computation with "+str(hashmap_entries)+" entries...", RNS.LOG_EXTREME)
 
                 self.random_hash       = RNS.Identity.get_random_hash()[:Resource.RANDOM_HASH_SIZE]
                 self.hash = RNS.Identity.full_hash(data+self.random_hash)
@@ -368,11 +448,11 @@ class Resource:
                 self.hashmap = b""
                 collision_guard_list = []
                 for i in range(0,hashmap_entries):
-                    data = self.data[i*Resource.SDU:(i+1)*Resource.SDU]
+                    data = self.data[i*self.sdu:(i+1)*self.sdu]
                     map_hash = self.get_map_hash(data)
 
                     if map_hash in collision_guard_list:
-                        RNS.log("Found hash collision in resource map, remapping...", RNS.LOG_VERBOSE)
+                        RNS.log("Found hash collision in resource map, remapping...", RNS.LOG_DEBUG)
                         hashmap_ok = False
                         break
                     else:
@@ -388,8 +468,9 @@ class Resource:
                         self.hashmap += part.map_hash
                         self.parts.append(part)
 
-                RNS.log("Hashmap computation concluded in "+str(round(time.time()-hashmap_computation_began, 3))+" seconds", RNS.LOG_DEBUG)
-                
+                RNS.log("Hashmap computation concluded in "+str(round(time.time()-hashmap_computation_began, 3))+" seconds", RNS.LOG_EXTREME)
+
+            self.data = None
             if advertise:
                 self.advertise()
         else:
@@ -442,12 +523,13 @@ class Resource:
         try:
             self.advertisement_packet.send()
             self.last_activity = time.time()
+            self.started_transferring = self.last_activity
             self.adv_sent = self.last_activity
             self.rtt = None
             self.status = Resource.ADVERTISED
             self.retries_left = self.max_adv_retries
             self.link.register_outgoing_resource(self)
-            RNS.log("Sent resource advertisement for "+RNS.prettyhexrep(self.hash), RNS.LOG_DEBUG)
+            RNS.log("Sent resource advertisement for "+RNS.prettyhexrep(self.hash), RNS.LOG_EXTREME)
         except Exception as e:
             RNS.log("Could not advertise resource, the contained exception was: "+str(e), RNS.LOG_ERROR)
             self.cancel()
@@ -455,9 +537,25 @@ class Resource:
 
         self.watchdog_job()
 
+    def update_eifr(self):
+        if self.rtt == None:
+            rtt = self.link.rtt
+        else:
+            rtt = self.rtt
+
+        if self.req_data_rtt_rate != 0:
+            expected_inflight_rate = self.req_data_rtt_rate*8
+        else:
+            if self.previous_eifr != None:
+                expected_inflight_rate = self.previous_eifr
+            else:
+                expected_inflight_rate = self.link.establishment_cost*8 / rtt
+
+        self.eifr = expected_inflight_rate
+        if self.link: self.link.expected_rate = self.eifr
+
     def watchdog_job(self):
-        thread = threading.Thread(target=self.__watchdog_job)
-        thread.daemon = True
+        thread = threading.Thread(target=self.__watchdog_job, daemon=True)
         thread.start()
 
     def __watchdog_job(self):
@@ -469,7 +567,6 @@ class Resource:
                 sleep(0.025)
 
             sleep_time = None
-
             if self.status == Resource.ADVERTISED:
                 sleep_time = (self.adv_sent+self.timeout+Resource.PROCESSING_GRACE)-time.time()
                 if sleep_time < 0:
@@ -493,17 +590,20 @@ class Resource:
 
             elif self.status == Resource.TRANSFERRING:
                 if not self.initiator:
-
-                    if self.rtt == None:
-                        rtt = self.link.rtt
-                    else:
-                        rtt = self.rtt
-
-                    window_remaining = self.outstanding_parts
-
                     retries_used = self.max_retries - self.retries_left
                     extra_wait = retries_used * Resource.PER_RETRY_DELAY
-                    sleep_time = self.last_activity + (rtt*(self.part_timeout_factor+window_remaining)) + Resource.RETRY_GRACE_TIME + extra_wait - time.time()
+
+                    self.update_eifr()
+                    expected_tof_remaining = (self.outstanding_parts*self.sdu*8)/self.eifr
+
+                    if self.req_resp_rtt_rate != 0:
+                        sleep_time = self.last_activity + self.part_timeout_factor*expected_tof_remaining + Resource.RETRY_GRACE_TIME + extra_wait - time.time()
+                    else:
+                        sleep_time = self.last_activity + self.part_timeout_factor*((3*self.sdu)/self.eifr) + Resource.RETRY_GRACE_TIME + extra_wait - time.time()
+                    
+                    # TODO: Remove debug at some point
+                    # RNS.log(f"EIFR {RNS.prettyspeed(self.eifr)}, ETOF {RNS.prettyshorttime(expected_tof_remaining)} ", RNS.LOG_DEBUG, pt=True)
+                    # RNS.log(f"Resource ST {RNS.prettyshorttime(sleep_time)}, RTT {RNS.prettyshorttime(self.rtt or self.link.rtt)}, {self.outstanding_parts} left", RNS.LOG_DEBUG, pt=True)
                     
                     if sleep_time < 0:
                         if self.retries_left > 0:
@@ -553,8 +653,11 @@ class Resource:
                         self.last_part_sent = time.time()
                         sleep_time = 0.001
 
+            elif self.status == Resource.REJECTED:
+                sleep_time = 0.001
+
             if sleep_time == 0:
-                RNS.log("Warning! Link watchdog sleep time of 0!", RNS.LOG_WARNING)
+                RNS.log("Warning! Link watchdog sleep time of 0!", RNS.LOG_DEBUG)
             if sleep_time == None or sleep_time < 0:
                 RNS.log("Timing error, cancelling resource transfer.", RNS.LOG_ERROR)
                 self.cancel()
@@ -568,29 +671,37 @@ class Resource:
                 self.status = Resource.ASSEMBLING
                 stream = b"".join(self.parts)
 
-                if self.encrypted:
-                    data = self.link.decrypt(stream)
-                else:
-                    data = stream
+                if self.encrypted: data = self.link.decrypt(stream)
+                else: data = stream
 
                 # Strip off random hash
                 data = data[Resource.RANDOM_HASH_SIZE:]
 
-                if self.compressed:
-                    self.data = bz2.decompress(data)
-                else:
-                    self.data = data
+                if self.compressed: self.data = bz2.decompress(data)
+                else: self.data = data
 
                 calculated_hash = RNS.Identity.full_hash(self.data+self.random_hash)
-
                 if calculated_hash == self.hash:
+                    if self.has_metadata and self.segment_index == 1:
+                        # TODO: Add early metadata_ready callback
+                        metadata_size = self.data[0] << 16 | self.data[1] << 8 | self.data[2]
+                        packed_metadata = self.data[3:3+metadata_size]
+                        metadata_file = open(self.meta_storagepath, "wb")
+                        metadata_file.write(packed_metadata)
+                        metadata_file.close()
+                        del packed_metadata
+                        data = self.data[3+metadata_size:]
+                    else:
+                        data = self.data
+
                     self.file = open(self.storagepath, "ab")
-                    self.file.write(self.data)
+                    self.file.write(data)
                     self.file.close()
                     self.status = Resource.COMPLETE
+                    del data
                     self.prove()
-                else:
-                    self.status = Resource.CORRUPT
+                
+                else: self.status = Resource.CORRUPT
 
 
             except Exception as e:
@@ -602,21 +713,27 @@ class Resource:
 
             if self.segment_index == self.total_segments:
                 if self.callback != None:
+                    if not os.path.isfile(self.meta_storagepath):
+                        self.metadata = None
+                    else:
+                        metadata_file = open(self.meta_storagepath, "rb")
+                        self.metadata = umsgpack.unpackb(metadata_file.read())
+                        metadata_file.close()
+                        try: os.unlink(self.meta_storagepath)
+                        except Exception as e:
+                            RNS.log(f"Error while cleaning up resource metadata file, the contained exception was: {e}", RNS.LOG_ERROR)
+
                     self.data = open(self.storagepath, "rb")
-                    try:
-                        self.callback(self)
+                    try: self.callback(self)
                     except Exception as e:
                         RNS.log("Error while executing resource assembled callback from "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
 
                 try:
-                    if hasattr(self.data, "close") and callable(self.data.close):
-                        self.data.close()
-
-                    os.unlink(self.storagepath)
+                    if hasattr(self.data, "close") and callable(self.data.close): self.data.close()
+                    if os.path.isfile(self.storagepath): os.unlink(self.storagepath)
 
                 except Exception as e:
-                    RNS.log("Error while cleaning up resource files, the contained exception was:", RNS.LOG_ERROR)
-                    RNS.log(str(e))
+                    RNS.log(f"Error while cleaning up resource files, the contained exception was: {e}", RNS.LOG_ERROR)
             else:
                 RNS.log("Resource segment "+str(self.segment_index)+" of "+str(self.total_segments)+" received, waiting for next segment to be announced", RNS.LOG_DEBUG)
 
@@ -647,6 +764,8 @@ class Resource:
             request_id = self.request_id,
             is_response = self.is_response,
             advertise = False,
+            auto_compress = self.auto_compress_option,
+            sent_metadata_size = self.metadata_size,
         )
 
     def validate_proof(self, proof_data):
@@ -659,18 +778,18 @@ class Resource:
                         # If all segments were processed, we'll
                         # signal that the resource sending concluded
                         if self.callback != None:
-                            try:
-                                self.callback(self)
-                            except Exception as e:
-                                RNS.log("Error while executing resource concluded callback from "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
+                            try: self.callback(self)
+                            except Exception as e: RNS.log("Error while executing resource concluded callback from "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
                             finally:
                                 try:
                                     if hasattr(self, "input_file"):
-                                        if hasattr(self.input_file, "close") and callable(self.input_file.close):
-                                            self.input_file.close()
-
-                                except Exception as e:
-                                    RNS.log("Error while closing resource input file: "+str(e), RNS.LOG_ERROR)
+                                        if hasattr(self.input_file, "close") and callable(self.input_file.close): self.input_file.close()
+                                except Exception as e: RNS.log("Error while closing resource input file: "+str(e), RNS.LOG_ERROR)
+                        else:
+                            try:
+                                if hasattr(self, "input_file"):
+                                    if hasattr(self.input_file, "close") and callable(self.input_file.close): self.input_file.close()
+                            except Exception as e: RNS.log("Error while closing resource input file: "+str(e), RNS.LOG_ERROR)
                     else:
                         # Otherwise we'll recursively create the
                         # next segment of the resource
@@ -678,8 +797,16 @@ class Resource:
                             RNS.log(f"Next segment preparation for resource {self} was not started yet, manually preparing now. This will cause transfer slowdown.", RNS.LOG_WARNING)
                             self.__prepare_next_segment()
 
-                        while self.next_segment == None:
-                            time.sleep(0.05)
+                        while self.next_segment == None: time.sleep(0.05)
+
+                        self.data = None
+                        self.metadata = None
+                        self.parts = None
+                        self.input_file = None
+                        self.link = None
+                        self.req_hashlist = None
+                        self.hashmap = None
+
                         self.next_segment.advertise()
                 else:
                     pass
@@ -770,6 +897,7 @@ class Resource:
 
                         if rtt != 0:
                             self.req_data_rtt_rate = req_transferred/rtt
+                            self.update_eifr()
                             self.rtt_rxd_bytes_at_part_req = self.rtt_rxd_bytes
 
                             if self.req_data_rtt_rate > Resource.RATE_FAST and self.fast_rate_rounds < Resource.FAST_RATE_THRESHOLD:
@@ -957,6 +1085,18 @@ class Resource:
                 except Exception as e:
                     RNS.log("Error while executing callbacks on resource cancel from "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
 
+    def _rejected(self):
+        if self.status < Resource.COMPLETE:
+            if self.initiator:
+                self.status = Resource.REJECTED
+                self.link.cancel_outgoing_resource(self)
+                if self.callback != None:
+                    try:
+                        self.link.resource_concluded(self)
+                        self.callback(self)
+                    except Exception as e:
+                        RNS.log("Error while executing callbacks on resource reject from "+str(self)+". The contained exception was: "+str(e), RNS.LOG_ERROR)
+
     def set_callback(self, callback):
         self.callback = callback
 
@@ -981,7 +1121,7 @@ class Resource:
                 processed_segments = self.segment_index-1
 
                 current_segment_parts = self.total_parts
-                max_parts_per_segment = math.ceil(Resource.MAX_EFFICIENT_SIZE/Resource.SDU)
+                max_parts_per_segment = math.ceil(Resource.MAX_EFFICIENT_SIZE/self.sdu)
 
                 previously_processed_parts = processed_segments*max_parts_per_segment
 
@@ -1004,7 +1144,7 @@ class Resource:
                 processed_segments = self.segment_index-1
 
                 current_segment_parts = self.total_parts
-                max_parts_per_segment = math.ceil(Resource.MAX_EFFICIENT_SIZE/Resource.SDU)
+                max_parts_per_segment = math.ceil(Resource.MAX_EFFICIENT_SIZE/self.sdu)
 
                 previously_processed_parts = processed_segments*max_parts_per_segment
 
@@ -1128,6 +1268,7 @@ class ResourceAdvertisement:
             self.c = resource.compressed        # Compression flag
             self.e = resource.encrypted         # Encryption flag
             self.s = resource.split             # Split flag
+            self.x = resource.has_metadata      # Metadata flag
             self.i = resource.segment_index     # Segment index
             self.l = resource.total_segments    # Total segments
             self.q = resource.request_id        # ID of associated request
@@ -1143,7 +1284,7 @@ class ResourceAdvertisement:
                     self.p = True
 
             # Flags
-            self.f = 0x00 | self.p << 4 | self.u << 3 | self.s << 2 | self.c << 1 | self.e
+            self.f = 0x00 | self.x << 5 | self.p << 4 | self.u << 3 | self.s << 2 | self.c << 1 | self.e
 
     def get_transfer_size(self):
         return self.t
@@ -1162,6 +1303,9 @@ class ResourceAdvertisement:
 
     def is_compressed(self):
         return self.c
+
+    def has_metadata(self):
+        return self.x
 
     def get_link(self):
         return self.link
@@ -1212,5 +1356,6 @@ class ResourceAdvertisement:
         adv.s = True if ((adv.f >> 2) & 0x01) == 0x01 else False
         adv.u = True if ((adv.f >> 3) & 0x01) == 0x01 else False
         adv.p = True if ((adv.f >> 4) & 0x01) == 0x01 else False
+        adv.x = True if ((adv.f >> 5) & 0x01) == 0x01 else False
 
         return adv

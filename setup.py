@@ -21,7 +21,7 @@ else:
     pkg_name = "rns-libsys"
     requirements = ['cryptography>=3.4.7', 'pyserial>=3.5']
 
-excluded_modules = exclude=["tests.*", "tests"]
+excluded_modules = ["tests.*", "tests"]
 packages = setuptools.find_packages(exclude=excluded_modules)
 
 setuptools.setup(
@@ -34,10 +34,12 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://reticulum.network/",
     packages=packages,
+    license="Reticulum License",
+    license_files = ("LICENSE"),
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        "Development Status :: 4 - Beta",
     ],
     entry_points= {
         'console_scripts': [

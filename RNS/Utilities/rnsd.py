@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2022 Mark Qvist / unsigned.io
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -11,8 +11,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -29,7 +37,7 @@ import time
 from RNS._version import __version__
 
 
-def program_setup(configdir, verbosity = 0, quietness = 0, service = False):
+def program_setup(configdir, verbosity = 0, quietness = 0, service = False, interactive=False):
     targetverbosity = verbosity-quietness
 
     if service:
@@ -42,10 +50,14 @@ def program_setup(configdir, verbosity = 0, quietness = 0, service = False):
     if reticulum.is_connected_to_shared_instance:
         RNS.log("Started rnsd version {version} connected to another shared local instance, this is probably NOT what you want!".format(version=__version__), RNS.LOG_WARNING)
     else:
+        # TODO: Rethink why this was added
+        # if RNS.Reticulum.get_instance().shared_instance_interface:
+        #     RNS.Reticulum.get_instance().shared_instance_interface.server.daemon_threads = True
         RNS.log("Started rnsd version {version}".format(version=__version__), RNS.LOG_NOTICE)
 
-    while True:
-        time.sleep(1)
+    if interactive: import code; code.interact(local=globals())
+    else:
+        while True: time.sleep(1)
 
 def main():
     try:
@@ -54,6 +66,7 @@ def main():
         parser.add_argument('-v', '--verbose', action='count', default=0)
         parser.add_argument('-q', '--quiet', action='count', default=0)
         parser.add_argument('-s', '--service', action='store_true', default=False, help="rnsd is running as a service and should log to file")
+        parser.add_argument('-i', '--interactive', action='store_true', default=False, help="drop into interactive shell after initialisation")
         parser.add_argument("--exampleconfig", action='store_true', default=False, help="print verbose configuration example to stdout and exit")
         parser.add_argument("--version", action="version", version="rnsd {version}".format(version=__version__))
         
@@ -68,7 +81,7 @@ def main():
         else:
             configarg = None
 
-        program_setup(configdir = configarg, verbosity=args.verbose, quietness=args.quiet, service=args.service)
+        program_setup(configdir = configarg, verbosity=args.verbose, quietness=args.quiet, service=args.service, interactive=args.interactive)
 
     except KeyboardInterrupt:
         print("")
@@ -104,12 +117,24 @@ share_instance = Yes
 
 # If you want to run multiple *different* shared instances
 # on the same system, you will need to specify different
-# shared instance ports for each. The defaults are given
-# below, and again, these options can be left out if you
-# don't need them.
+# instance names for each. On platforms supporting domain
+# sockets, this can be done with the instance_name option:
 
-shared_instance_port = 37428
-instance_control_port = 37429
+instance_name = default
+
+# Some platforms don't support domain sockets, and if that
+# is the case, you can isolate different instances by
+# specifying a unique set of ports for each:
+
+# shared_instance_port = 37428
+# instance_control_port = 37429
+
+
+# If you want to explicitly use TCP for shared instance
+# communication, instead of domain sockets, this is also
+# possible, by using the following option:
+
+# shared_instance_type = tcp
 
 
 # On systems where running instances may not have access
@@ -141,7 +166,7 @@ instance_control_port = 37429
 # an optional directive, and can be left out for brevity.
 # This behaviour is disabled by default.
 
-panic_on_interface_error = No
+# panic_on_interface_error = No
 
 
 # When Transport is enabled, it is possible to allow the
@@ -152,7 +177,7 @@ panic_on_interface_error = No
 # Transport Instance, and printed to the log at startup.
 # Optional, and disabled by default.
 
-respond_to_probes = No
+# respond_to_probes = No
 
 
 [logging]

@@ -1,6 +1,6 @@
-# MIT License
+# Reticulum License
 #
-# Copyright (c) 2016-2024 Mark Qvist / unsigned.io and contributors.
+# Copyright (c) 2016-2025 Mark Qvist
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,16 @@
 # copies of the Software, and to permit persons to whom the Software is
 # furnished to do so, subject to the following conditions:
 #
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
+# - The Software shall not be used in any kind of system which includes amongst
+#   its functions the ability to purposefully do harm to human beings.
+#
+# - The Software shall not be used, directly or indirectly, in the creation of
+#   an artificial intelligence, machine learning or language model training
+#   dataset, including but not limited to any use that contributes to the
+#   training or development of such a model or algorithm.
+#
+# - The above copyright notice and this permission notice shall be included in
+#   all copies or substantial portions of the Software.
 #
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 # IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -71,12 +79,15 @@ class Identity:
     HASHLENGTH                = 256         # In bits
     SIGLENGTH                 = KEYSIZE     # In bits
 
-    NAME_HASH_LENGTH     = 80
-    TRUNCATED_HASHLENGTH = RNS.Reticulum.TRUNCATED_HASHLENGTH
+    NAME_HASH_LENGTH          = 80
+    TRUNCATED_HASHLENGTH      = RNS.Reticulum.TRUNCATED_HASHLENGTH
     """
     Constant specifying the truncated hash length (in bits) used by Reticulum
     for addressable hashes and other purposes. Non-configurable.
     """
+
+    DERIVED_KEY_LENGTH        = 512//8
+    DERIVED_KEY_LENGTH_LEGACY = 256//8
 
     # Storage
     known_destinations = {}
@@ -93,28 +104,46 @@ class Identity:
 
 
     @staticmethod
-    def recall(destination_hash):
+    def recall(target_hash, from_identity_hash=False):
         """
-        Recall identity for a destination hash.
+        Recall identity for a destination or identity hash. By default, this function
+        will return the identity associated with a given *destination* hash. As an
+        example, if you know the ``lxmf.delivery`` destination hash of an endpoint,
+        this function will return the associated underlying identity. You can also
+        search for an identity from a known *identity hash*, by setting the
+        ``from_identity_hash`` argument.
 
-        :param destination_hash: Destination hash as *bytes*.
+        :param target_hash: Destination or identity hash as *bytes*.
+        :param from_identity_hash: Whether to search based on identity hash instead of destination hash as *bool*.
         :returns: An :ref:`RNS.Identity<api-identity>` instance that can be used to create an outgoing :ref:`RNS.Destination<api-destination>`, or *None* if the destination is unknown.
         """
-        if destination_hash in Identity.known_destinations:
-            identity_data = Identity.known_destinations[destination_hash]
-            identity = Identity(create_keys=False)
-            identity.load_public_key(identity_data[2])
-            identity.app_data = identity_data[3]
-            return identity
-        else:
-            for registered_destination in RNS.Transport.destinations:
-                if destination_hash == registered_destination.hash:
+        if from_identity_hash:
+            for destination_hash in Identity.known_destinations:
+                if target_hash == Identity.truncated_hash(Identity.known_destinations[destination_hash][2]):
+                    identity_data = Identity.known_destinations[destination_hash]
                     identity = Identity(create_keys=False)
-                    identity.load_public_key(registered_destination.identity.get_public_key())
-                    identity.app_data = None
+                    identity.load_public_key(identity_data[2])
+                    identity.app_data = identity_data[3]
                     return identity
 
             return None
+
+        else:
+            if target_hash in Identity.known_destinations:
+                identity_data = Identity.known_destinations[target_hash]
+                identity = Identity(create_keys=False)
+                identity.load_public_key(identity_data[2])
+                identity.app_data = identity_data[3]
+                return identity
+            else:
+                for registered_destination in RNS.Transport.destinations:
+                    if target_hash == registered_destination.hash:
+                        identity = Identity(create_keys=False)
+                        identity.load_public_key(registered_destination.identity.get_public_key())
+                        identity.app_data = None
+                        return identity
+
+                return None
 
     @staticmethod
     def recall_app_data(destination_hash):
@@ -266,30 +295,34 @@ class Identity:
 
     @staticmethod
     def _remember_ratchet(destination_hash, ratchet):
-        # TODO: Remove at some point, and only log new ratchets
-        RNS.log(f"Remembering ratchet {RNS.prettyhexrep(Identity._get_ratchet_id(ratchet))} for {RNS.prettyhexrep(destination_hash)}", RNS.LOG_EXTREME)
         try:
-            Identity.known_ratchets[destination_hash] = ratchet
+            if destination_hash in Identity.known_ratchets and Identity.known_ratchets[destination_hash] == ratchet:
+                ratchet_exists = True
+            else:
+                ratchet_exists = False
 
-            if not RNS.Transport.owner.is_connected_to_shared_instance:
-                def persist_job():
-                    with Identity.ratchet_persist_lock:
-                        hexhash = RNS.hexrep(destination_hash, delimit=False)
-                        ratchet_data = {"ratchet": ratchet, "received": time.time()}
+            if not ratchet_exists:
+                RNS.log(f"Remembering ratchet {RNS.prettyhexrep(Identity._get_ratchet_id(ratchet))} for {RNS.prettyhexrep(destination_hash)}", RNS.LOG_EXTREME)
+                Identity.known_ratchets[destination_hash] = ratchet
+                if not RNS.Transport.owner.is_connected_to_shared_instance:
+                    def persist_job():
+                        with Identity.ratchet_persist_lock:
+                            hexhash = RNS.hexrep(destination_hash, delimit=False)
+                            ratchet_data = {"ratchet": ratchet, "received": time.time()}
 
-                        ratchetdir = RNS.Reticulum.storagepath+"/ratchets"
-                        
-                        if not os.path.isdir(ratchetdir):
-                            os.makedirs(ratchetdir)
+                            ratchetdir = RNS.Reticulum.storagepath+"/ratchets"
+                            
+                            if not os.path.isdir(ratchetdir):
+                                os.makedirs(ratchetdir)
 
-                        outpath   = f"{ratchetdir}/{hexhash}.out"
-                        finalpath = f"{ratchetdir}/{hexhash}"
-                        with open(outpath, "wb") as ratchet_file:
-                            ratchet_file.write(umsgpack.packb(ratchet_data))
-                        os.replace(outpath, finalpath)
+                            outpath   = f"{ratchetdir}/{hexhash}.out"
+                            finalpath = f"{ratchetdir}/{hexhash}"
+                            with open(outpath, "wb") as ratchet_file:
+                                ratchet_file.write(umsgpack.packb(ratchet_data))
+                            os.replace(outpath, finalpath)
 
-                
-                threading.Thread(target=persist_job, daemon=True).start()
+                    
+                    threading.Thread(target=persist_job, daemon=True).start()
 
         except Exception as e:
             RNS.log(f"Could not persist ratchet for {RNS.prettyhexrep(destination_hash)} to storage.", RNS.LOG_ERROR)
@@ -306,12 +339,19 @@ class Identity:
                 for filename in os.listdir(ratchetdir):
                     try:
                         expired = False
+                        corrupted = False
                         with open(f"{ratchetdir}/{filename}", "rb") as rf:
-                            ratchet_data = umsgpack.unpackb(rf.read())
-                            if now > ratchet_data["received"]+Identity.RATCHET_EXPIRY:
-                                expired = True
+                            # TODO: Remove individual ratchet file if corrupt
+                            try:
+                                ratchet_data = umsgpack.unpackb(rf.read())
+                                if now > ratchet_data["received"]+Identity.RATCHET_EXPIRY:
+                                    expired = True
 
-                        if expired:
+                            except Exception as e:
+                                RNS.log(f"Corrupted ratchet data while reading {ratchetdir}/{filename}, removing file", RNS.LOG_ERROR)
+                                corrupted = True
+
+                        if expired or corrupted:
                             os.unlink(f"{ratchetdir}/{filename}")
 
                     except Exception as e:
@@ -640,7 +680,7 @@ class Identity:
             shared_key = ephemeral_key.exchange(target_public_key)
             
             derived_key = RNS.Cryptography.hkdf(
-                length=32,
+                length=Identity.DERIVED_KEY_LENGTH,
                 derive_from=shared_key,
                 salt=self.get_salt(),
                 context=self.get_context(),
@@ -654,6 +694,16 @@ class Identity:
         else:
             raise KeyError("Encryption failed because identity does not hold a public key")
 
+    def __decrypt(self, shared_key, ciphertext):
+        derived_key = RNS.Cryptography.hkdf(
+            length=Identity.DERIVED_KEY_LENGTH,
+            derive_from=shared_key,
+            salt=self.get_salt(),
+            context=self.get_context())
+
+        token = Token(derived_key)
+        plaintext = token.decrypt(ciphertext)
+        return plaintext
 
     def decrypt(self, ciphertext_token, ratchets=None, enforce_ratchets=False, ratchet_id_receiver=None):
         """
@@ -663,6 +713,7 @@ class Identity:
         :returns: Plaintext as *bytes*, or *None* if decryption fails.
         :raises: *KeyError* if the instance does not hold a private key.
         """
+
         if self.prv != None:
             if len(ciphertext_token) > Identity.KEYSIZE//8//2:
                 plaintext = None
@@ -677,15 +728,7 @@ class Identity:
                                 ratchet_prv = X25519PrivateKey.from_private_bytes(ratchet)
                                 ratchet_id = Identity._get_ratchet_id(ratchet_prv.public_key().public_bytes())
                                 shared_key = ratchet_prv.exchange(peer_pub)
-                                derived_key = RNS.Cryptography.hkdf(
-                                    length=32,
-                                    derive_from=shared_key,
-                                    salt=self.get_salt(),
-                                    context=self.get_context(),
-                                )
-
-                                token = Token(derived_key)
-                                plaintext = token.decrypt(ciphertext)
+                                plaintext = self.__decrypt(shared_key, ciphertext)
                                 if ratchet_id_receiver:
                                     ratchet_id_receiver.latest_ratchet_id = ratchet_id
                                 
@@ -702,15 +745,8 @@ class Identity:
 
                     if plaintext == None:
                         shared_key = self.prv.exchange(peer_pub)
-                        derived_key = RNS.Cryptography.hkdf(
-                            length=32,
-                            derive_from=shared_key,
-                            salt=self.get_salt(),
-                            context=self.get_context(),
-                        )
+                        plaintext = self.__decrypt(shared_key, ciphertext)
 
-                        token = Token(derived_key)
-                        plaintext = token.decrypt(ciphertext)
                         if ratchet_id_receiver:
                             ratchet_id_receiver.latest_ratchet_id = None
 
@@ -719,7 +755,8 @@ class Identity:
                     if ratchet_id_receiver:
                         ratchet_id_receiver.latest_ratchet_id = None
                     
-                return plaintext;
+                return plaintext
+            
             else:
                 RNS.log("Decryption failed because the token size was invalid.", RNS.LOG_DEBUG)
                 return None

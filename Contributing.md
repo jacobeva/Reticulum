@@ -6,7 +6,7 @@ Apart from writing code, there are many ways in which you can contribute. Before
 
 ## Expected Conduct
 
-First and foremost, there is one simple requirement for taking part in this community: While we primarily interact virtually, your actions matter and have real consequences. Therefore: **Act like a responsible, civilized person** - also in the face of disputes and heated disagreements. Speak your mind here, discussions are welcome. Just do so in the spirit of being face-to-face with everyone else. Thank you.
+First and foremost, there is one simple requirement for taking part in this community: While we primarily interact virtually, your actions matter and have real consequences. Therefore: **Act like a responsible, civilized person** - especially in the face of disputes and heated disagreements. Speak your mind here; discussions are welcome. Just do so in the spirit of being face-to-face with everyone else. Thank you.
 
 ## Asking Questions
 
@@ -40,4 +40,12 @@ Pull requests have a high chance of being accepted if they are:
 
 Even new ideas and proposals that have not been approved by a maintainer, or fall outside the established roadmap, are *occasionally* accepted - if they possess the remaining of the above qualities. If not, they will be closed and removed without comments or explanation.
 
-By contributing code to this project, you agree that copyright for the code is transferred to the Reticulum maintainers and that the code is irrevocably placed under the [MIT license](./LICENSE).
+## Generative AI Policy
+
+Contributions written using large language models (LLMs) or other generative 'AI' programs are prohibited. LLMs produce errors so frequently and in a way that is so unlike human error that issues will regularly remain undetected and slip through, even with stringent review. This is not a worthwhile tradeoff for Reticulum, especially considering the limited time maintainers have to correct these issues, and we ask that you refrain from using any such output in your contributions.
+
+This applies to all official Reticlulm projects and documentation as well as all submitted issues and discussion in official channels, except in cases where language translation and/or speech recogntion technologies are required for communication.  We also ask that you avoid using LLMs for troubleshooting, as results can be misleading, and instead request help in one of our [various communities](https://reticulum.network/start.html).
+
+## Contributor License Agreement
+
+By contributing code to this project, you agree that copyright for the code is transferred to the Reticulum maintainers and that the code is irrevocably placed under the [Reticulum License](./LICENSE).

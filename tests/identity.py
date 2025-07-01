@@ -8,7 +8,7 @@ signed_message = "e51a008b8b8ba855993d8892a40daad84a6fb69a7138e1b5f69b427fe03449
 sig_from_key_0 = "3020ef58f861591826a61c3d2d4a25b949cdb3094085ba6b1177a6f2a05f3cdd24d1095d6fdd078f0b2826e80b261c93c1ff97fbfd4857f25706d57dd073590c"
 
 encrypted_message = "71884a271ead43558fcf1e331c5aebcd43498f16da16f8056b0893ce6b15d521eaa4f31639cd34da1b57995944076c4f14f300f2d2612111d21a3429a9966ac1da68545c00c7887d8b26f6c1ab9defa020b9519849ca41b7904199882802b6542771df85144a79890289d3c02daef6c26652c5ce9de231a2"
-fixed_token = "54d6ba347f3f2fe74fa52d6844a9090c049a6f437d7d151b9bd7db3e6785dd40286c451babda82660cbb4827517365b740675adf60d4b82778d7f7815a0e9818f2f2d3f15c0365e9d4f08df4f8261e5549c8c398e92bc66750fcd4ce7ea150f8a8761936341129e89afd22eaa57c303ccbe045d0b2fc7b8637946e16627419ef1fea0a0fef974c418a98af046d61e8e064f42c4948b0c81701106583c8f224329c0b475cb2168dc2e3fbf649edb79c58b7c839a509e146ec8d26589cb990c76c756fdefd0110410a6ab84fa3a722db74"
+fixed_token = "e37705f9b432d3711acf028678b0b9d37fdf7e00a3b47c95251aad61447df2620b5b9978783c3d9f2fb762e68c8b57c554928fb70dd79c1033ce5865f91761aad3e992790f63456092cb69b7b045f539147f7ba10d480e300f193576ae2d75a7884809b76bd17e05a735383305c0aa5621395bbf51e8cc66c1c536f339f2bea600f08f8f9a76564b2522cd904b6c2b6e553ec3d4df718ae70434c734297b313539338d184d2c64a9c4ddbc9b9a4947d0b45f5a274f65ae9f6bb203562fd5cede6abd3c615b699156e08fa33b841647a0"
 
 fixed_keys = [
     ("f8953ffaf607627e615603ff1530c82c434cf87c07179dd7689ea776f30b964cfb7ba6164af00c5111a45e69e57d885e1285f8dbfe3a21e95ae17cf676b0f8b7", "650b5d76b6bec0390d1f8cfca5bd33f9"),
@@ -148,9 +148,12 @@ class TestIdentity(unittest.TestCase):
     def test_2_encrypt(self):
         print("")
 
-        # Test decryption of known token
+        # Test loading identity from bytes
         fid = RNS.Identity.from_bytes(bytes.fromhex(fixed_keys[0][0]))
         self.assertEqual(fid.hash, bytes.fromhex(fixed_keys[0][1]))
+
+        # Test decryption of known AES-256 token
+        print("Testing decryption of known token")
         plaintext = fid.decrypt(bytes.fromhex(fixed_token))
         self.assertEqual(plaintext, bytes.fromhex(encrypted_message))
 
@@ -159,6 +162,8 @@ class TestIdentity(unittest.TestCase):
         b = 0
         e_t = 0
         d_t = 0
+        e_times = []
+        d_times = []
         for i in range(1, 500):
             mlen = i % (RNS.Reticulum.MTU//2) + (RNS.Reticulum.MTU//2)
             msg = os.urandom(mlen)
@@ -169,16 +174,34 @@ class TestIdentity(unittest.TestCase):
 
             e_start = time.time()
             token = id2.encrypt(msg)
-            e_t += time.time() - e_start
+            e_now = time.time()
+            e_t += e_now - e_start
+            e_times.append(e_now - e_start)
 
             d_start = time.time()
             decrypted = id1.decrypt(token)
             self.assertEqual(msg, decrypted)
-            d_t += time.time() - d_start
+            d_now = time.time()
+            d_t += d_now - d_start
+            d_times.append(d_now - d_start)
 
-        print("Encrypt chunks < MTU: "+self.size_str(b/e_t, "b")+"ps")
-        print("Decrypt chunks < MTU: "+self.size_str(b/d_t, "b")+"ps")
-        print("")
+        import statistics
+        e_tmin  = min(e_times)*1000; d_tmin  = min(d_times)*1000
+        e_tmax  = max(e_times)*1000; d_tmax  = max(d_times)*1000
+        e_tmean  = (sum(e_times)/len(e_times))*1000; d_tmean  = (sum(d_times)/len(d_times))*1000
+        e_tmed = statistics.median(e_times)*1000; d_tmed = statistics.median(d_times)*1000
+        e_tmdev = e_tmax - e_tmin; d_tmdev = d_tmax - d_tmin
+        e_mpct = (e_tmax/e_tmed)*100; d_mpct = (d_tmax/d_tmed)*100
+
+        print("  Encrypt chunks < MTU: "+self.size_str(b/e_t, "b")+"ps")
+        print("    Encryption timing min/avg/med/max/mdev: "+str(round(e_tmin, 3))+"/"+str(round(e_tmean, 3))+"/"+str(round(e_tmed, 3))+"/"+str(round(e_tmax, 3))+"/"+str(round(e_tmdev, 3)))
+        print("    Max deviation from median: "+str(round(e_mpct, 1))+"%")
+        print()
+
+        print("  Decrypt chunks < MTU: "+self.size_str(b/d_t, "b")+"ps")
+        print("    Decryption timing min/avg/med/max/mdev: "+str(round(d_tmin, 3))+"/"+str(round(d_tmean, 3))+"/"+str(round(d_tmed, 3))+"/"+str(round(d_tmax, 3))+"/"+str(round(d_tmdev, 3)))
+        print("    Max deviation from median: "+str(round(d_mpct, 1))+"%")
+        print()
 
         # Test encrypt and decrypt of large chunks
         print("Testing large chunk encrypt/decrypt")
@@ -197,14 +220,32 @@ class TestIdentity(unittest.TestCase):
 
             e_start = time.time()
             token = id2.encrypt(msg)
-            e_t += time.time() - e_start
+            e_now = time.time()
+            e_t += e_now - e_start
+            e_times.append(e_now - e_start)
 
             d_start = time.time()
             self.assertEqual(msg, id1.decrypt(token))
-            d_t += time.time() - d_start
+            d_now = time.time()
+            d_t += d_now - d_start
+            d_times.append(d_now - d_start)
 
-        print("Encrypt "+self.size_str(mlen)+" chunks: "+self.size_str(b/e_t, "b")+"ps")
-        print("Decrypt "+self.size_str(mlen)+" chunks: "+self.size_str(b/d_t, "b")+"ps")
+        e_tmin  = min(e_times)*1000; d_tmin  = min(d_times)*1000
+        e_tmax  = max(e_times)*1000; d_tmax  = max(d_times)*1000
+        e_tmean  = (sum(e_times)/len(e_times))*1000; d_tmean  = (sum(d_times)/len(d_times))*1000
+        e_tmed = statistics.median(e_times)*1000; d_tmed = statistics.median(d_times)*1000
+        e_tmdev = e_tmax - e_tmin; d_tmdev = d_tmax - d_tmin
+        e_mpct = (e_tmax/e_tmed)*100; d_mpct = (d_tmax/d_tmed)*100
+
+        print("  Encrypt "+self.size_str(mlen)+" chunks: "+self.size_str(b/e_t, "b")+"ps")
+        print("    Encryption timing min/avg/med/max/mdev: "+str(round(e_tmin, 3))+"/"+str(round(e_tmean, 3))+"/"+str(round(e_tmed, 3))+"/"+str(round(e_tmax, 3))+"/"+str(round(e_tmdev, 3)))
+        print("    Max deviation from median: "+str(round(e_mpct, 1))+"%")
+        print()
+
+        print("  Decrypt "+self.size_str(mlen)+" chunks: "+self.size_str(b/d_t, "b")+"ps")
+        print("    Decryption timing min/avg/med/max/mdev: "+str(round(d_tmin, 3))+"/"+str(round(d_tmean, 3))+"/"+str(round(d_tmed, 3))+"/"+str(round(d_tmax, 3))+"/"+str(round(d_tmdev, 3)))
+        print("    Max deviation from median: "+str(round(d_mpct, 1))+"%")
+        print()
 
     def size_str(self, num, suffix='B'):
         units = ['','K','M','G','T','P','E','Z']
