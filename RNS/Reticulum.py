@@ -696,7 +696,10 @@ class Reticulum:
                                         interface.ifac_identity = RNS.Identity.from_bytes(interface.ifac_key)
                                         interface.ifac_signature = interface.ifac_identity.sign(RNS.Identity.full_hash(interface.ifac_key))
 
-                                    if isinstance(interface, RNS.Interfaces.RNodeMultiInterface.RNodeMultiInterface) or isinstance(interface, Interfaces.Android.RNodeMultiInterface.RNodeMultiInterface):
+                                    if isinstance(interface, RNS.Interfaces.RNodeMultiInterface.RNodeMultiInterface):
+                                        interface.start()
+
+                                    elif get_platform() == "android" and isinstance(interface, Interfaces.Android.RNodeMultiInterface.RNodeMultiInterface):
                                         interface.start()
 
                                     RNS.Transport.interfaces.append(interface)
