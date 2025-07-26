@@ -912,7 +912,7 @@ class RNodeMultiInterface(Interface):
             pass
         else:
             data    = KISS.escape(data)
-            frame   = bytes([0xc0])+bytes([interface.data_cmd])+data+bytes([0xc0])
+            frame   = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index, KISS.FEND, KISS.FEND, KISS.CMD_DATA])+data+bytes([KISS.FEND])
 
             written = self.write_mux(frame)
             self.txb += len(data)
@@ -1393,51 +1393,9 @@ class RNodeSubInterface(Interface):
 
         super().__init__()
         
-        if index == 0:
-            sel_cmd = KISS.CMD_SEL_INT0
-            data_cmd= KISS.CMD_INT0_DATA
-        elif index == 1:
-            sel_cmd = KISS.CMD_SEL_INT1
-            data_cmd= KISS.CMD_INT1_DATA
-        elif index == 2:
-            sel_cmd = KISS.CMD_SEL_INT2
-            data_cmd= KISS.CMD_INT2_DATA
-        elif index == 3:
-            sel_cmd = KISS.CMD_SEL_INT3
-            data_cmd= KISS.CMD_INT3_DATA
-        elif index == 4:
-            sel_cmd = KISS.CMD_SEL_INT4
-            data_cmd= KISS.CMD_INT4_DATA
-        elif index == 5:
-            sel_cmd = KISS.CMD_SEL_INT5
-            data_cmd= KISS.CMD_INT5_DATA
-        elif index == 6:
-            sel_cmd = KISS.CMD_SEL_INT6
-            data_cmd= KISS.CMD_INT6_DATA
-        elif index == 7:
-            sel_cmd = KISS.CMD_SEL_INT7
-            data_cmd= KISS.CMD_INT7_DATA
-        elif index == 8:
-            sel_cmd = KISS.CMD_SEL_INT8
-            data_cmd= KISS.CMD_INT8_DATA
-        elif index == 9:
-            sel_cmd = KISS.CMD_SEL_INT9
-            data_cmd= KISS.CMD_INT9_DATA
-        elif index == 10:
-            sel_cmd = KISS.CMD_SEL_INT10
-            data_cmd= KISS.CMD_INT10_DATA
-        elif index == 11:
-            sel_cmd = KISS.CMD_SEL_INT11
-            data_cmd= KISS.CMD_INT11_DATA
-        else:
-            sel_cmd = KISS.CMD_SEL_INT0
-            data_cmd= KISS.CMD_INT0_DATA
-
         self.owner       = owner
         self.name        = name
         self.index       = index
-        self.sel_cmd     = sel_cmd
-        self.data_cmd    = data_cmd
         self.interface_type= interface_type
         self.flow_control= flow_control
         self.online      = False
