@@ -74,20 +74,9 @@ class KISS():
     CMD_FW_VERSION  = 0x50
     CMD_ROM_READ    = 0x51
     CMD_RESET       = 0x55
-    CMD_INTERFACES  = 0x64
+    CMD_INTERFACES  = 0x71
 
-    CMD_INT0_DATA   = 0x00
-    CMD_INT1_DATA   = 0x10
-    CMD_INT2_DATA   = 0x20
-    CMD_INT3_DATA   = 0x70
-    CMD_INT4_DATA   = 0x75
-    CMD_INT5_DATA   = 0x90
-    CMD_INT6_DATA   = 0xA0
-    CMD_INT7_DATA   = 0xB0
-    CMD_INT8_DATA   = 0xC0
-    CMD_INT9_DATA   = 0xD0
-    CMD_INT10_DATA  = 0xE0
-    CMD_INT11_DATA  = 0xF0
+    CMD_DATA        = 0x00
 
     DETECT_REQ      = 0x73
     DETECT_RESP     = 0x46
@@ -452,7 +441,7 @@ class RNodeMultiInterface(Interface):
         c4 = frequency & 0xFF
         data = KISS.escape(bytes([c1])+bytes([c2])+bytes([c3])+bytes([c4]))
 
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_FREQUENCY])+data+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_FREQUENCY])+data+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring frequency for "+str(self))
@@ -464,28 +453,28 @@ class RNodeMultiInterface(Interface):
         c4 = bandwidth & 0xFF
         data = KISS.escape(bytes([c1])+bytes([c2])+bytes([c3])+bytes([c4]))
 
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_BANDWIDTH])+data+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_BANDWIDTH])+data+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring bandwidth for "+str(self))
 
     def setTXPower(self, txpower, interface):
         txp = txpower.to_bytes(1, byteorder="big", signed=True)
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring TX power for "+str(self))
 
     def setSpreadingFactor(self, sf, interface):
         sf = bytes([sf])
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_SF])+sf+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_SF])+sf+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring spreading factor for "+str(self))
 
     def setCodingRate(self, cr, interface):
         cr = bytes([cr])
-        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_CR])+cr+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_CR])+cr+bytes([KISS.FEND])
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring coding rate for "+str(self))
@@ -497,7 +486,7 @@ class RNodeMultiInterface(Interface):
             c2 = at & 0xFF
             data = KISS.escape(bytes([c1])+bytes([c2]))
 
-            kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_ST_ALOCK])+data+bytes([KISS.FEND])
+            kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_ST_ALOCK])+data+bytes([KISS.FEND])
             written = self.serial.write(kiss_command)
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while configuring short-term airtime limit for "+str(self))
@@ -509,7 +498,7 @@ class RNodeMultiInterface(Interface):
             c2 = at & 0xFF
             data = KISS.escape(bytes([c1])+bytes([c2]))
 
-            kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT])+bytes([interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_LT_ALOCK])+data+bytes([KISS.FEND])
+            kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_LT_ALOCK])+data+bytes([KISS.FEND])
             written = self.serial.write(kiss_command)
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while configuring long-term airtime limit for "+str(self))
@@ -569,7 +558,7 @@ class RNodeMultiInterface(Interface):
                     last_read_ms = int(time.time()*1000)
 
                     if (in_frame and byte == KISS.FEND and
-                            (command == KISS.CMD_DATA)):
+                            command == KISS.CMD_DATA):
                         in_frame = False
                         self.subinterfaces[self.selected_index].process_incoming(data_buffer)
                         data_buffer = b""
@@ -582,18 +571,7 @@ class RNodeMultiInterface(Interface):
                     elif (in_frame and len(data_buffer) < self.HW_MTU):
                         if (len(data_buffer) == 0 and command == KISS.CMD_UNKNOWN):
                             command = byte
-                        elif (command == KISS.CMD_INT0_DATA or
-                              command == KISS.CMD_INT1_DATA or
-                              command == KISS.CMD_INT2_DATA or
-                              command == KISS.CMD_INT3_DATA or
-                              command == KISS.CMD_INT4_DATA or
-                              command == KISS.CMD_INT5_DATA or
-                              command == KISS.CMD_INT6_DATA or
-                              command == KISS.CMD_INT7_DATA or
-                              command == KISS.CMD_INT8_DATA or
-                              command == KISS.CMD_INT9_DATA or
-                              command == KISS.CMD_INT10_DATA or
-                              command == KISS.CMD_INT11_DATA):
+                        elif (command == KISS.CMD_DATA):
                             if (byte == KISS.FESC):
                                 escape = True
                             else:

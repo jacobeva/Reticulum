@@ -75,33 +75,9 @@ class KISS():
     CMD_FW_VERSION  = 0x50
     CMD_ROM_READ    = 0x51
     CMD_RESET       = 0x55
-    CMD_INTERFACES  = 0x64
+    CMD_INTERFACES  = 0x71
 
-    CMD_INT0_DATA   = 0x00
-    CMD_INT1_DATA   = 0x10
-    CMD_INT2_DATA   = 0x20
-    CMD_INT3_DATA   = 0x70
-    CMD_INT4_DATA   = 0x80
-    CMD_INT5_DATA   = 0x90
-    CMD_INT6_DATA   = 0xA0
-    CMD_INT7_DATA   = 0xB0
-    CMD_INT8_DATA   = 0xC0
-    CMD_INT9_DATA   = 0xD0
-    CMD_INT10_DATA  = 0xE0
-    CMD_INT11_DATA  = 0xF0
-
-    CMD_SEL_INT0    = 0x1E
-    CMD_SEL_INT1    = 0x1F
-    CMD_SEL_INT2    = 0x2F
-    CMD_SEL_INT3    = 0x7F
-    CMD_SEL_INT4    = 0x8F
-    CMD_SEL_INT5    = 0x9F
-    CMD_SEL_INT6    = 0xAF
-    CMD_SEL_INT7    = 0xBF
-    CMD_SEL_INT8    = 0xCF
-    CMD_SEL_INT9    = 0xDF
-    CMD_SEL_INT10   = 0xEF
-    CMD_SEL_INT11   = 0xFF
+    CMD_DATA        = 0x00
 
     DETECT_REQ      = 0x73
     DETECT_RESP     = 0x46
@@ -127,33 +103,7 @@ class KISS():
     SX128X    = 0x20
     SX1280    = 0x21
 
-    def int_data_cmd_to_index(int_data_cmd):
-        if int_data_cmd == KISS.CMD_INT0_DATA:
-            return 0
-        elif int_data_cmd == KISS.CMD_INT1_DATA:
-            return 1
-        elif int_data_cmd == KISS.CMD_INT2_DATA:
-            return 2
-        elif int_data_cmd == KISS.CMD_INT3_DATA:
-            return 3
-        elif int_data_cmd == KISS.CMD_INT4_DATA:
-            return 4
-        elif int_data_cmd == KISS.CMD_INT5_DATA:
-            return 5
-        elif int_data_cmd == KISS.CMD_INT6_DATA:
-            return 6
-        elif int_data_cmd == KISS.CMD_INT7_DATA:
-            return 7
-        elif int_data_cmd == KISS.CMD_INT8_DATA:
-            return 8
-        elif int_data_cmd == KISS.CMD_INT9_DATA:
-            return 9
-        elif int_data_cmd == KISS.CMD_INT10_DATA:
-            return 10
-        elif int_data_cmd == KISS.CMD_INT11_DATA:
-            return 11
-        else:
-            return 0
+    CMD_SEL_INT = 0x1F
 
     def interface_type_to_str(interface_type):
         if interface_type == KISS.SX126X or interface_type == KISS.SX1262:
@@ -870,7 +820,7 @@ class RNodeMultiInterface(Interface):
         c4 = frequency & 0xFF
         data = KISS.escape(bytes([c1])+bytes([c2])+bytes([c3])+bytes([c4]))
 
-        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_FREQUENCY])+data+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_FREQUENCY])+data+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring frequency for "+str(self))
@@ -883,35 +833,31 @@ class RNodeMultiInterface(Interface):
         c4 = bandwidth & 0xFF
         data = KISS.escape(bytes([c1])+bytes([c2])+bytes([c3])+bytes([c4]))
 
-        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_BANDWIDTH])+data+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_BANDWIDTH])+data+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring bandwidth for "+str(self))
-        self.selected_index = interface.index
 
     def setTXPower(self, txpower, interface):
         txp = txpower.to_bytes(1, byteorder="big", signed=True)
-        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_TXPOWER])+txp+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring TX power for "+str(self))
-        self.selected_index = interface.index
 
     def setSpreadingFactor(self, sf, interface):
         sf = bytes([sf])
-        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_SF])+sf+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_SF])+sf+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring spreading factor for "+str(self))
-        self.selected_index = interface.index
 
     def setCodingRate(self, cr, interface):
         cr = bytes([cr])
-        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_CR])+cr+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_CR])+cr+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring coding rate for "+str(self))
-        self.selected_index = interface.index
 
     def setSTALock(self, st_alock, interface):
         if st_alock != None:
@@ -920,11 +866,10 @@ class RNodeMultiInterface(Interface):
             c2 = at & 0xFF
             data = KISS.escape(bytes([c1])+bytes([c2]))
 
-            kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_ST_ALOCK])+data+bytes([KISS.FEND])
+            kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_ST_ALOCK])+data+bytes([KISS.FEND])
             written = self.write_mux(kiss_command)
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while configuring short-term airtime limit for "+str(self))
-            self.selected_index = interface.index
 
     def setLTALock(self, lt_alock, interface):
         if lt_alock != None:
@@ -933,19 +878,17 @@ class RNodeMultiInterface(Interface):
             c2 = at & 0xFF
             data = KISS.escape(bytes([c1])+bytes([c2]))
 
-            kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_LT_ALOCK])+data+bytes([KISS.FEND])
+            kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_LT_ALOCK])+data+bytes([KISS.FEND])
             written = self.write_mux(kiss_command)
             if written != len(kiss_command):
                 raise IOError("An IO error occurred while configuring long-term airtime limit for "+str(self))
-            self.selected_index = interface.index
 
     def setRadioState(self, state, interface):
         #self.state = state
-        kiss_command = bytes([KISS.FEND])+bytes([interface.sel_cmd])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_RADIO_STATE])+bytes([state])+bytes([KISS.FEND])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_SEL_INT, interface.index])+bytes([KISS.FEND])+bytes([KISS.FEND])+bytes([KISS.CMD_RADIO_STATE])+bytes([state])+bytes([KISS.FEND])
         written = self.write_mux(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while configuring radio state for "+str(self))
-        self.selected_index = interface.index
 
     def validate_firmware(self):
         if (self.maj_version >= RNodeMultiInterface.REQUIRED_FW_VER_MAJ):
@@ -1002,21 +945,9 @@ class RNodeMultiInterface(Interface):
                     last_read_ms = int(time.time()*1000)
 
                     if (in_frame and byte == KISS.FEND and
-                            (command == KISS.CMD_INT0_DATA or
-                            command == KISS.CMD_INT1_DATA or
-                            command == KISS.CMD_INT2_DATA or
-                            command == KISS.CMD_INT3_DATA or
-                            command == KISS.CMD_INT4_DATA or
-                            command == KISS.CMD_INT5_DATA or
-                            command == KISS.CMD_INT6_DATA or
-                            command == KISS.CMD_INT7_DATA or
-                            command == KISS.CMD_INT8_DATA or
-                            command == KISS.CMD_INT9_DATA or
-                            command == KISS.CMD_INT10_DATA or
-                            command == KISS.CMD_INT11_DATA)):
+                            command == KISS.CMD_DATA):
                         in_frame = False
-                        self.subinterfaces[KISS.int_data_cmd_to_index(command)].process_incoming(data_buffer)
-                        self.selected_index = KISS.int_data_cmd_to_index(command)
+                        self.subinterfaces[self.selected_index].process_incoming(data_buffer)
                         data_buffer = b""
                         command_buffer = b""
                     elif (byte == KISS.FEND):
@@ -1027,18 +958,7 @@ class RNodeMultiInterface(Interface):
                     elif (in_frame and len(data_buffer) < self.HW_MTU):
                         if (len(data_buffer) == 0 and command == KISS.CMD_UNKNOWN):
                             command = byte
-                        elif (command == KISS.CMD_INT0_DATA or
-                              command == KISS.CMD_INT1_DATA or
-                              command == KISS.CMD_INT2_DATA or
-                              command == KISS.CMD_INT3_DATA or
-                              command == KISS.CMD_INT4_DATA or
-                              command == KISS.CMD_INT5_DATA or
-                              command == KISS.CMD_INT6_DATA or
-                              command == KISS.CMD_INT7_DATA or
-                              command == KISS.CMD_INT8_DATA or
-                              command == KISS.CMD_INT9_DATA or
-                              command == KISS.CMD_INT10_DATA or
-                              command == KISS.CMD_INT11_DATA):
+                        elif (command == KISS.CMD_DATA):
                             if (byte == KISS.FESC):
                                 escape = True
                             else:
@@ -1082,6 +1002,9 @@ class RNodeMultiInterface(Interface):
                                         self.subinterfaces[self.selected_index].r_bandwidth = command_buffer[0] << 24 | command_buffer[1] << 16 | command_buffer[2] << 8 | command_buffer[3]
                                         RNS.log(str(self.subinterfaces[self.selected_index])+" Radio reporting bandwidth is "+str(self.subinterfaces[self.selected_index].r_bandwidth/1000.0)+" KHz", RNS.LOG_DEBUG)
                                         self.subinterfaces[self.selected_index].updateBitrate()
+
+                        elif (command == KISS.CMD_SEL_INT):
+                            self.selected_index = byte
 
                         elif (command == KISS.CMD_TXPOWER):
                             txp = byte - 256 if byte > 127 else byte
